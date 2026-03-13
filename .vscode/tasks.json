@@ -14,6 +14,118 @@
 			"command": "lsof -ti:5001 | xargs kill -9 2>/dev/null; lsof -ti:5000 | xargs kill -9 2>/dev/null; sleep 1; source .venv/bin/activate && python3 app.py",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Debug parsers",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 debug_pdfs.py registrations.pdf schedule.pdf 2>&1 | head -80",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Diagnose reg cat",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"\nimport pdfplumber, re\nCAT_RE = re.compile(r'(\\\\d{2}\\\\s+[A-Z]{2}\\\\s+\\\\d{3})', re.IGNORECASE)\nwith pdfplumber.open('registrations.pdf') as pdf:\n    for i, page in enumerate(pdf.pages[1:6], start=2):\n        text = page.extract_text() or ''\n        lines = text.splitlines()\n        for line in lines:\n            if CAT_RE.search(line):\n                print(repr(line[:120]))\n\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check separator",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"\nimport pdfplumber, re\nSEP = '\\uf007'\nwith pdfplumber.open('registrations.pdf') as pdf:\n    for i, page in enumerate(pdf.pages[1:4], start=2):\n        text = page.extract_text() or ''\n        for line in text.splitlines():\n            if SEP in line:\n                parts = line.split(SEP, 1)\n                print('BEFORE:', repr(parts[0].strip()[:80]))\n                print('AFTER :', repr(parts[1].strip()[:60]))\n                print()\n\" 2>&1 | head -80",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Write reg parser",
+			"type": "shell",
+			"command": "cat > /Users/taajemaa/dev/private/sportdata-scanner/utils/parse_registrations.py << 'ENDOFFILE'\n\"\"\"\nparse_registrations.py\n\nParses the sportdata registrations PDF (printed webpage).\n\nKey discovery: pdfplumber renders the person-icon (U+F007) between\nthe fighter name and the category code on each line.\n\nLine format:\n  CLUB_INFO FIGHTER_NAME \\uf007 CATEGORY_CODE\n\nExample lines:\n  'GRAZ(ASKOEKCG) MAIER ALEXANDER \\uf007 02 LC 135 S M -94 KG'\n  'HUETTER(ASKOEKH), AUSTRIA HAAS LENA \\uf007 01 PF 045 OC F -42 KG'\n  'SEKTION KICKBOXEN(ATSVLBSK), FEICHTINGER MIA SOPHIE \\uf007 01 PF 048 OC F -55 KG'\n\"\"\"\n\nimport re\nimport pdfplumber\n\n# The person-icon character that separates name from category in the PDF\n_SEP = '\\uf007'\n\n# Country abbreviation in parentheses, e.g. (SUI) (AUT) (GER)\n_COUNTRY_ABBR_RE = re.compile(r'\\(([A-Z]{2,3})\\)')\n\n# Skip lines that are page metadata\n_SKIP_RE = re.compile(\n    r'https?://|SET-ONLINE|UBERSICHT|NENNUNGEN GESAMT|TOTAL ATHLETES'\n    r'|^TEAM\\s|Suchen:|^\\s*\\d+/\\d+\\s*$',\n    re.IGNORECASE,\n)\n\nSWISS_ABBREVS = {'SUI'}\nSWISS_NAMES   = {'switzerland', 'schweiz', 'suisse', 'svizzera'}\n\n\ndef extract_fighters(pdf_path: str) -> list[dict]:\n    \"\"\"Return ALL fighters from the registrations PDF.\"\"\"\n    lines = _extract_lines(pdf_path)\n    return _parse_lines(lines, swiss_only=False)\n\n\ndef get_swiss_fighters(pdf_path: str) -> list[dict]:\n    \"\"\"Return Swiss fighters only, deduplicated by (name, category_code).\"\"\"\n    lines = _extract_lines(pdf_path)\n    fighters = _parse_lines(lines, swiss_only=True)\n    seen = set()\n    unique = []\n    for f in fighters:\n        key = (f['name'].lower(), f['category_code'].lower())\n        if key not in seen:\n            seen.add(key)\n            unique.append(f)\n    return unique\n\n\ndef _extract_lines(pdf_path: str) -> list[str]:\n    lines = []\n    with pdfplumber.open(pdf_path) as pdf:\n        for page in pdf.pages:\n            text = page.extract_text() or ''\n            lines.extend(text.splitlines())\n    return lines\n\n\ndef _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:\n    fighters = []\n    n = len(lines)\n\n    for i, raw_line in enumerate(lines):\n        if _SEP not in raw_line:\n            continue\n        line = raw_line.strip()\n        if _SKIP_RE.search(line):\n            continue\n\n        parts = line.split(_SEP, 1)\n        before        = parts[0].strip()   # club prefix + fighter name\n        category_raw  = parts[1].strip()   # category code (uppercase)\n\n        if not category_raw:\n            continue\n\n        # --- extract country from the \"before\" part ---\n        country = _country_from_text(before)\n\n        # --- if no country on this line, check surrounding lines ---\n        if not country:\n            window_start = max(0, i - 2)\n            window_end   = min(n, i + 3)\n            for ctx_line in lines[window_start:window_end]:\n                country = _country_from_text(ctx_line)\n                if country:\n                    break\n\n        if swiss_only and country not in SWISS_ABBREVS:\n            continue\n\n        # --- extract name: rightmost uppercase words before the icon ---\n        name = _extract_name(before)\n        if not name:\n            continue\n\n        # --- clean up club ---\n        club = _extract_club(before, name)\n\n        # Normalise category code to lowercase to match schedule codes\n        category_code = category_raw.strip().rstrip('.')\n\n        fighters.append({\n            'name':          name,\n            'category_code': category_code,\n            'category':      category_code,     # alias used by matcher\n            'country':       country,\n            'club':          club,\n        })\n\n    return fighters\n\n\n_ALL_CAPS_WORD_RE = re.compile(r\"^[A-ZÄÖÜ][A-ZÄÖÜ\\-\\']+$\")\n\n\ndef _extract_name(before: str) -> str:\n    \"\"\"\n    Name = rightmost run of ALL-CAPS words in the \"before\" string.\n    Stops when it hits a word that isn't all-caps (club text, country name).\n    \"\"\"\n    # Remove content in parentheses (club abbreviations)\n    cleaned = re.sub(r'\\([^)]*\\)', ' ', before).strip()\n    tokens = cleaned.split()\n    name_tokens = []\n    for tok in reversed(tokens):\n        tok_clean = tok.rstrip(',-')\n        if _ALL_CAPS_WORD_RE.match(tok_clean) and len(tok_clean) > 1:\n            # Skip known country names that would appear here\n            if tok_clean.lower() not in SWISS_NAMES and tok_clean not in {\n                'AUSTRIA', 'GERMANY', 'FRANCE', 'ITALY', 'ITALIA',\n                'HUNGARY', 'SLOVAKIA', 'CZECH', 'POLAND', 'SPAIN',\n                'CROATIA', 'SERBIA', 'ROMANIA', 'BULGARIA', 'UKRAINE',\n            }:\n                name_tokens.insert(0, tok_clean)\n            else:\n                break\n        else:\n            break\n    return ' '.join(name_tokens)\n\n\ndef _country_from_text(text: str) -> str:\n    \"\"\"Return 3-letter country abbreviation if found in text, else empty string.\"\"\"\n    m = _COUNTRY_ABBR_RE.search(text)\n    if m:\n        return m.group(1).upper()\n    text_lower = text.lower()\n    for name in SWISS_NAMES:\n        if name in text_lower:\n            return 'SUI'\n    return ''\n\n\ndef _extract_club(before: str, name: str) -> str:\n    \"\"\"Extract club = everything before the name in the before string.\"\"\"\n    idx = before.rfind(name)\n    if idx > 0:\n        club = before[:idx].strip().strip(',').strip()\n        # Remove inline country name from club string\n        club = re.sub(\n            r'\\b(?:SWITZERLAND|SCHWEIZ|SUISSE|SVIZZERA|AUSTRIA|GERMANY'\n            r'|FRANCE|ITALY|ITALIA|HUNGARY)\\b',\n            '', club, flags=re.IGNORECASE\n        ).strip().strip(',').strip()\n        return club\n    return ''\nENDOFFILE\necho 'written'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Full end-to-end test",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 debug_pdfs.py registrations.pdf schedule.pdf 2>&1",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Debug end-to-end",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 debug_pdfs.py registrations.pdf schedule.pdf",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Debug to file",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 debug_pdfs.py registrations.pdf schedule.pdf > /tmp/debug_out.txt 2>&1 && echo 'done' && cat /tmp/debug_out.txt | head -60",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test reg parser",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"\nfrom utils.parse_registrations import get_swiss_fighters, extract_fighters\nall_f = extract_fighters('registrations.pdf')\nswiss = get_swiss_fighters('registrations.pdf')\nprint(f'Total fighters: {len(all_f)}')\nprint(f'Swiss fighters: {len(swiss)}')\nfor f in swiss[:15]:\n    print(f'  {f[\\\"name\\\"]:30s}  {f[\\\"category_code\\\"]:30s}  {f[\\\"country\\\"]}')\n\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run parser inline",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"from utils.parse_registrations import get_swiss_fighters, extract_fighters; all_f = extract_fighters('registrations.pdf'); swiss = get_swiss_fighters('registrations.pdf'); print('Total:', len(all_f), 'Swiss:', len(swiss)); [print(f['name'], '|', f['category_code'], '|', f['country']) for f in swiss[:15]]\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run test script",
+			"type": "shell",
+			"command": "source .venv/bin/activate && cd /Users/taajemaa/dev/private/sportdata-scanner && python3 /tmp/run_test.py > /tmp/out2.txt 2>&1; echo EXIT:$?; cat /tmp/out2.txt",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run test script v2",
+			"type": "shell",
+			"command": "source .venv/bin/activate && cd /Users/taajemaa/dev/private/sportdata-scanner && python3 /tmp/run_test.py",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run test v3",
+			"type": "shell",
+			"command": "source .venv/bin/activate && cd /Users/taajemaa/dev/private/sportdata-scanner && python3 /tmp/run_test.py",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Fresh test output",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 /tmp/run_test.py > /tmp/fresh_out.txt 2>&1 && wc -l /tmp/fresh_out.txt && head -50 /tmp/fresh_out.txt",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Syntax check",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"import app; from utils.parse_registrations import get_swiss_fighters; from utils.parse_schedule import extract_schedule; print('Imports OK')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Restart Flask",
+			"type": "shell",
+			"command": "pkill -f 'python3 app.py' 2>/dev/null; lsof -ti:5001 | xargs kill -9 2>/dev/null; sleep 1; source .venv/bin/activate && python3 app.py",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check Flask",
+			"type": "shell",
+			"command": "curl -s -o /dev/null -w 'HTTP:%{http_code}' http://127.0.0.1:5001/ && echo ' Flask OK'",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

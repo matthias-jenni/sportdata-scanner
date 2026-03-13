@@ -87,6 +87,17 @@
           Generate Timetable →
         </button>
       </form>
+
+      <hr class="my-3"/>
+
+      <form method="post" action="/debug" enctype="multipart/form-data" class="text-center">
+        <div class="mb-3">
+          <label class="form-label fw-semibold text-muted small">Debug: inspect raw parser output</label>
+          <input type="file" class="form-control form-control-sm mb-2" name="registrations" accept=".pdf" required />
+          <input type="file" class="form-control form-control-sm mb-2" name="schedule" accept=".pdf" required />
+          <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🔍 Show raw parsed data (JSON)</button>
+        </div>
+      </form>
     </div>
   </div>
 

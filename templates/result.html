@@ -133,29 +133,22 @@
           <th>Time</th>
           <th>Name</th>
           <th>Category</th>
+          <th>Phase</th>
           <th>Tatami</th>
-          <th>Corner</th>
-          <th>Opponent</th>
           <th>Club</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
         <tr>
-          <td><span class="badge-time">{{ r.time }}</span></td>
+          <td>
+            <span class="badge-time">{{ r.time }}</span>
+            {% if r.time_end %}<br><span class="text-muted" style="font-size:.75rem">– {{ r.time_end }}</span>{% endif %}
+          </td>
           <td><strong>{{ r.name }}</strong></td>
           <td>{{ r.category }}</td>
+          <td><span class="text-muted small">{{ r.phase }}</span></td>
           <td><span class="badge-tatami">{{ r.tatami }}</span></td>
-          <td>
-            {% if r.corner == 'Red' %}
-              <span class="badge-corner-red">Red</span>
-            {% elif r.corner == 'Blue' %}
-              <span class="badge-corner-blue">Blue</span>
-            {% else %}
-              <span class="badge-corner-q">?</span>
-            {% endif %}
-          </td>
-          <td>{{ r.opponent }}</td>
           <td class="text-muted small">{{ r.club }}</td>
         </tr>
         {% endfor %}
@@ -168,22 +161,13 @@
     {% for r in rows %}
     <div class="fight-card">
       <div class="fc-header">
-        <span class="badge-time">{{ r.time }}</span>
+        <span class="badge-time">{{ r.time }}{% if r.time_end %} – {{ r.time_end }}{% endif %}</span>
         <span class="badge-tatami">{{ r.tatami }}</span>
       </div>
       <div class="fc-name">{{ r.name }}</div>
       <div class="fc-cat">{{ r.category }}</div>
+      {% if r.phase %}<div class="fc-club" style="color:#d00;font-weight:600">{{ r.phase }}</div>{% endif %}
       {% if r.club %}<div class="fc-club">{{ r.club }}</div>{% endif %}
-      {% if r.opponent %}
-      <div class="fc-opp">
-        vs <em>{{ r.opponent }}</em>
-        {% if r.corner == 'Red' %}
-          &nbsp;<span class="badge-corner-red">Red</span>
-        {% elif r.corner == 'Blue' %}
-          &nbsp;<span class="badge-corner-blue">Blue</span>
-        {% endif %}
-      </div>
-      {% endif %}
     </div>
     {% endfor %}
   </div>

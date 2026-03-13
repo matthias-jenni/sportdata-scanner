@@ -29,63 +29,64 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 # --- helper ----------------------------------------------------------------
 
 
+import re as _re
+_CAT_NUM_RE = _re.compile(r"\d{2}\s+([A-Z]{2})\s+(\d{3})", _re.IGNORECASE)
+
+
+def _cat_key(s: str):
+    """
+    Extract the unique category key: (discipline_prefix, 3-digit-number).
+    E.g. '01 PF 034 OC M -37 KG'  ->  ('pf', '034')
+         '02 LC 109 OC F -55 kg'  ->  ('lc', '109')
+    Returns None if not parseable.
+    """
+    m = _CAT_NUM_RE.search(s)
+    if m:
+        return (m.group(1).lower(), m.group(2))
+    return None
+
+
+def _cats_match(reg_cat: str, sched_code: str) -> bool:
+    """Match by exact (discipline, 3-digit-number) key."""
+    a = _cat_key(reg_cat)
+    b = _cat_key(sched_code)
+    return a is not None and b is not None and a == b
+
+
 def _match(fighters: list[dict], schedule: list[dict]) -> list[dict]:
     """
-    Cross-reference Swiss fighters with the schedule.
-
-    For each fight in the schedule, check if either fighter_1 or fighter_2
-    matches a Swiss fighter (by name substring, case-insensitive) OR if the
-    fight's category matches a category in which a Swiss fighter is registered.
-
-    Returns a flat list of rows ready for display.
+    The schedule has NO individual fighter names — only category codes per
+    time-slot. We match Swiss fighters by the (discipline, 3-digit-number)
+    key extracted from their category code.
     """
-    swiss_names_lower = {f["name"].lower() for f in fighters}
-    swiss_cats_lower = {f["category"].lower() for f in fighters}
-
-    # Build a lookup: category_lower -> list of Swiss fighters
-    cat_to_swiss: dict[str, list[dict]] = {}
+    # Build lookup: cat_key -> list of Swiss fighters
+    cat_to_swiss: dict[tuple, list[dict]] = {}
     for f in fighters:
-        cat_to_swiss.setdefault(f["category"].lower(), []).append(f)
+        key = _cat_key(f.get("category", ""))
+        if key:
+            cat_to_swiss.setdefault(key, []).append(f)
 
     rows = []
-    for fight in schedule:
-        cat_lower = fight["category"].lower()
-        f1_lower = fight["fighter_1"].lower()
-        f2_lower = fight["fighter_2"].lower()
+    for slot in schedule:
+        sched_code = slot.get("category_code", "")
+        if not sched_code:
+            continue
+        sched_key = _cat_key(sched_code)
+        if not sched_key:
+            continue
 
-        matched_fighters: list[dict] = []
+        matched_swiss: list[dict] = cat_to_swiss.get(sched_key, [])
 
-        # Method 1: direct name match
-        for swiss in fighters:
-            sname = swiss["name"].lower()
-            if sname in f1_lower or f1_lower in sname:
-                matched_fighters.append({**swiss, "corner": "Red"})
-            elif sname in f2_lower or f2_lower in sname:
-                matched_fighters.append({**swiss, "corner": "Blue"})
-
-        # Method 2: category match (covers cases where names differ slightly)
-        if not matched_fighters:
-            any_name_match = any(
-                sn in f1_lower or sn in f2_lower or
-                f1_lower in sn or f2_lower in sn
-                for sn in swiss_names_lower
-            )
-            if not any_name_match and cat_lower in swiss_cats_lower:
-                for swiss in cat_to_swiss.get(cat_lower, []):
-                    matched_fighters.append({**swiss, "corner": "?"})
-
-        for mf in matched_fighters:
+        for sw in matched_swiss:
             rows.append({
-                "time": fight["time"],
-                "tatami": fight["tatami"],
-                "category": fight["category"] or mf["category"],
-                "name": mf["name"],
-                "club": mf.get("club", ""),
-                "corner": mf.get("corner", ""),
-                "opponent": (
-                    fight["fighter_2"] if mf.get("corner") == "Red"
-                    else fight["fighter_1"]
-                ),
+                "time":     slot["time"],
+                "time_end": slot.get("time_end", ""),
+                "tatami":   slot["tatami"],
+                "category": sched_code,
+                "phase":    slot.get("phase", ""),
+                "name":     sw["name"],
+                "club":     sw.get("club", ""),
+                "country":  sw.get("country", ""),
             })
 
     # Deduplicate by (time, tatami, name)
@@ -97,16 +98,10 @@ def _match(fighters: list[dict], schedule: list[dict]) -> list[dict]:
             seen.add(key)
             unique.append(r)
 
-    # Sort chronologically
     from datetime import datetime
-
-    def sort_key(r):
-        try:
-            return datetime.strptime(r["time"], "%H:%M")
-        except ValueError:
-            return datetime.max
-
-    unique.sort(key=sort_key)
+    unique.sort(key=lambda r: (
+        datetime.strptime(r["time"], "%H:%M") if ":" in r["time"] else datetime.max
+    ))
     return unique
 
 
@@ -116,6 +111,38 @@ def _match(fighters: list[dict], schedule: list[dict]) -> list[dict]:
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
+
+
+@app.route("/debug", methods=["POST"])
+def debug():
+    """Upload both PDFs and get raw JSON output from both parsers."""
+    import json, tempfile, pathlib
+    reg_file = request.files.get("registrations")
+    sched_file = request.files.get("schedule")
+    if not reg_file or not sched_file:
+        return "Upload both files", 400
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+        reg_path = tmp / "registrations.pdf"
+        sched_path = tmp / "schedule.pdf"
+        reg_file.save(str(reg_path))
+        sched_file.save(str(sched_path))
+        from utils.parse_registrations import extract_fighters, get_swiss_fighters
+        from utils.parse_schedule import extract_schedule
+        all_fighters = extract_fighters(str(reg_path))
+        swiss = get_swiss_fighters(str(reg_path))
+        schedule = extract_schedule(str(sched_path))
+    result = {
+        "registrations_total": len(all_fighters),
+        "registrations_sample": all_fighters[:20],
+        "swiss_fighters": swiss,
+        "schedule_total": len(schedule),
+        "schedule_sample": schedule[:30],
+    }
+    return app.response_class(
+        json.dumps(result, indent=2, ensure_ascii=False),
+        mimetype="application/json",
+    )
 
 
 @app.route("/process", methods=["POST"])
