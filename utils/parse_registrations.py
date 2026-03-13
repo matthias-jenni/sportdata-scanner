@@ -71,8 +71,14 @@ def _extract_lines(pdf_path: str) -> list[str]:
 def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
     fighters = []
     n = len(lines)
+    current_country = ''   # carries forward from the last seen country header
 
     for i, raw_line in enumerate(lines):
+        # Update the running country from any line (section headers, etc.)
+        line_country = _country_from_text(raw_line)
+        if line_country:
+            current_country = line_country
+
         if _SEP not in raw_line:
             continue
         line = raw_line.strip()
@@ -86,10 +92,10 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
         if not category_raw:
             continue
 
-        # --- extract country from the "before" part ---
+        # --- extract country from the "before" part first ---
         country = _country_from_text(before)
 
-        # --- if no country on this line, check surrounding lines ---
+        # --- if not on this line, check ±2 surrounding lines ---
         if not country:
             window_start = max(0, i - 2)
             window_end   = min(n, i + 3)
@@ -97,6 +103,11 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
                 country = _country_from_text(ctx_line)
                 if country:
                     break
+
+        # --- fall back to the running country (handles Switzerland-only PDFs
+        #     where (SUI) appears once in a section header, not on every line) ---
+        if not country:
+            country = current_country
 
         if swiss_only and country not in SWISS_ABBREVS:
             continue
