@@ -6,4 +6,5 @@ venv/
 .venv/
 *.pdf
 instance/
+cache/
 .DS_Store

@@ -23,6 +23,7 @@ from flask import (
 from utils.parse_registrations import get_swiss_fighters
 from utils.parse_schedule import extract_schedule
 from utils.parse_draws import extract_draws, pool_for_fighter
+from utils import cache as _cache
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -137,7 +138,7 @@ def _match(fighters: list[dict], schedule: list[dict], draws: dict | None = None
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    return render_template("index.html", caches=_cache.list_all(), default_name=_cache.default_name())
 
 
 @app.route("/debug", methods=["POST"])
@@ -210,17 +211,55 @@ def process():
                   "Check that the file is correct and that the country column "
                   "contains 'SUI', 'Switzerland' or similar.", "warning")
 
+        # ---- persist to cache -----------------------------------------------
+        cache_name = request.form.get("cache_name", "").strip() or _cache.default_name()
+        slug = _cache.save(
+            name=cache_name,
+            rows=rows,
+            fighter_list=swiss_fighters,
+            swiss_count=len(swiss_fighters),
+            draws_used=bool(draws),
+        )
+        # -----------------------------------------------------------------------
+
         return render_template(
             "result.html",
             rows=rows,
             swiss_count=len(swiss_fighters),
             fighter_list=swiss_fighters,
             draws_used=bool(draws),
+            cache_name=cache_name,
+            cache_slug=slug,
         )
 
     except Exception:
         flash(f"Error processing PDFs: {traceback.format_exc()}", "error")
         return redirect(url_for("index"))
+
+
+@app.route("/cache/<slug>", methods=["GET"])
+def load_cache(slug):
+    entry = _cache.load(slug)
+    if entry is None:
+        flash(f"Cache '{slug}' not found.", "error")
+        return redirect(url_for("index"))
+    return render_template(
+        "result.html",
+        rows=entry["rows"],
+        swiss_count=entry["swiss_count"],
+        fighter_list=entry["fighter_list"],
+        draws_used=entry["draws_used"],
+        cache_name=entry["name"],
+        cache_slug=slug,
+        cache_created=entry.get("created", ""),
+    )
+
+
+@app.route("/cache/<slug>/delete", methods=["POST"])
+def delete_cache(slug):
+    _cache.delete(slug)
+    flash(f"Cache deleted.", "success")
+    return redirect(url_for("index"))
 
 
 @app.route("/download-pdf", methods=["POST"])
@@ -234,6 +273,7 @@ def download_pdf():
         swiss_count = int(request.form.get("swiss_count", 0))
         fighter_list_json = request.form.get("fighter_list_json", "[]")
         draws_used = request.form.get("draws_used", "false") == "true"
+        cache_name = request.form.get("cache_name", "")
 
         rows = json.loads(rows_json)
         fighter_list = json.loads(fighter_list_json)
@@ -244,6 +284,7 @@ def download_pdf():
             swiss_count=swiss_count,
             fighter_list=fighter_list,
             draws_used=draws_used,
+            cache_name=cache_name,
             pdf_mode=True,
         )
         pdf_bytes = HTML(string=html_str).write_pdf()
