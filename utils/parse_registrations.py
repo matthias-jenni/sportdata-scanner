@@ -2,18 +2,8 @@
 parse_registrations.py
 
 Parses the sportdata registrations PDF (printed webpage).
-
-Key discovery: pdfplumber renders the person-icon (U+F007) between
-the fighter name and the category code on each line.
-
-Line format:
-  CLUB_INFO FIGHTER_NAME \uf007 CATEGORY_CODE
-
-Example lines:
-  'GRAZ(ASKOEKCG) MAIER ALEXANDER \uf007 02 LC 135 S M -94 KG'
-  'HUETTER(ASKOEKH), AUSTRIA HAAS LENA \uf007 01 PF 045 OC F -42 KG'
-  'SEKTION KICKBOXEN(ATSVLBSK), FEICHTINGER MIA SOPHIE \uf007 01 PF 048 OC F -55 KG'
 """
+from __future__ import annotations
 
 import re
 import pdfplumber

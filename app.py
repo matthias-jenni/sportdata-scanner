@@ -4,6 +4,7 @@ app.py – Sportdata Swiss Fighter Timetable
 Upload two PDFs (registrations + schedule) and get back a
 chronological timetable of all Swiss fighters.
 """
+from __future__ import annotations
 
 import os
 import traceback

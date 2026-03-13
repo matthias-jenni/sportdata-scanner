@@ -15,6 +15,7 @@ Cache entry schema:
     "fighter_list": list[dict],
 }
 """
+from __future__ import annotations
 
 import json
 import os

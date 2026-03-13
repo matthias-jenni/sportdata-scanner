@@ -2,23 +2,8 @@
 parse_draws.py
 
 Parses the sportdata draws PDF.
-
-Format (one page = one pool of one category):
-  Table 1, row 0:
-    col 0: "01 PF 034 OC M -37 kg\n[10]\nEvent info..."
-    col 1: "Ring\n01 09:00"
-    col 2: "Pool\n1/4"   ← pool N of M
-
-  Raw text lines (skipping header & footer):
-    (*1) Name One (Club Name,SUI)     ← seeded
-    Name Two (Another Club,GBR)
-    Final                             ← bracket separator, ignored
-    Name Three (Club,FRA)
-    ...
-
-Returns:
-  { normalised_category_code : { normalised_fighter_name : pool_number } }
 """
+from __future__ import annotations
 
 import re
 import pdfplumber
