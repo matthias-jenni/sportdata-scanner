@@ -83,6 +83,18 @@
           <div class="form-text">The official schedule with time, tatami and categories.</div>
         </div>
 
+        <div class="mb-4">
+          <label for="draws" class="form-label">🎲 Draws PDF <span class="badge bg-secondary" style="font-size:.7rem;vertical-align:middle">optional</span></label>
+          <input
+            type="file"
+            class="form-control"
+            id="draws"
+            name="draws"
+            accept=".pdf"
+          />
+          <div class="form-text">Pool assignments per category. If provided, each fighter is shown only for their specific pool slot.</div>
+        </div>
+
         <button type="submit" class="btn btn-primary w-100 py-2 fs-5">
           Generate Timetable →
         </button>

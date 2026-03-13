@@ -112,7 +112,8 @@
 <div class="hero">
   <h1>🇨🇭 Swiss Fighter Timetable</h1>
   <p>{{ swiss_count }} Swiss fighter{% if swiss_count != 1 %}s{% endif %} registered
-  · {{ rows|length }} fight slot{% if rows|length != 1 %}s{% endif %} found</p>
+  · {{ rows|length }} fight slot{% if rows|length != 1 %}s{% endif %} found
+  {% if draws_used %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🎲 draws applied</span>{% endif %}</p>
 </div>
 
 {% if not pdf_mode %}
@@ -133,6 +134,7 @@
           <th>Time</th>
           <th>Name</th>
           <th>Category</th>
+          <th>Pool</th>
           <th>Phase</th>
           <th>Tatami</th>
           <th>Club</th>
@@ -147,6 +149,7 @@
           </td>
           <td><strong>{{ r.name }}</strong></td>
           <td>{{ r.category }}</td>
+          <td>{% if r.pool_label %}<span style="color:#d00;font-weight:600">{{ r.pool_label }}</span>{% endif %}</td>
           <td><span class="text-muted small">{{ r.phase }}</span></td>
           <td><span class="badge-tatami">{{ r.tatami }}</span></td>
           <td class="text-muted small">{{ r.club }}</td>
@@ -166,7 +169,8 @@
       </div>
       <div class="fc-name">{{ r.name }}</div>
       <div class="fc-cat">{{ r.category }}</div>
-      {% if r.phase %}<div class="fc-club" style="color:#d00;font-weight:600">{{ r.phase }}</div>{% endif %}
+      {% if r.pool_label %}<div class="fc-club" style="color:#d00;font-weight:700">{{ r.pool_label }}</div>{% endif %}
+      {% if r.phase %}<div class="fc-club" style="color:#555">{{ r.phase }}</div>{% endif %}
       {% if r.club %}<div class="fc-club">{{ r.club }}</div>{% endif %}
     </div>
     {% endfor %}
@@ -209,6 +213,7 @@
     <input type="hidden" name="rows_json"         value="{{ rows | tojson | e }}" />
     <input type="hidden" name="fighter_list_json" value="{{ fighter_list | tojson | e }}" />
     <input type="hidden" name="swiss_count"       value="{{ swiss_count }}" />
+    <input type="hidden" name="draws_used"        value="{{ 'true' if draws_used else 'false' }}" />
     <button type="submit" class="btn btn-red">⬇ Download as PDF</button>
     <span class="text-muted small ms-auto">{{ rows|length }} entry{% if rows|length != 1 %}s{% endif %}</span>
   </form>

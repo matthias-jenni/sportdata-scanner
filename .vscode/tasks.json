@@ -126,6 +126,41 @@
 			"command": "curl -s -o /dev/null -w 'HTTP:%{http_code}' http://127.0.0.1:5001/ && echo ' Flask OK'",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Syntax check draws",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"import app; from utils.parse_draws import extract_draws, pool_for_fighter; print('All imports OK')\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test draws parser",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"\nimport sys\ncontent = open('/Users/taajemaa/dev/private/sportdata-scanner/utils/parse_draws.py').read()\nprint('Current size:', len(content), 'bytes')\n# Quick test\nfrom utils.parse_draws import extract_draws, pool_for_fighter\nd = extract_draws('draws.pdf')\nprint('Categories in draws:', len(d))\nfor cat, fighters in list(d.items())[:5]:\n    print(f'  {cat}: {len(fighters)} fighters, pools: {set(fighters.values())}')\n    for name, pool in list(fighters.items())[:3]:\n        print(f'    pool {pool}: {name}')\n\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test draws matching",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"\nfrom utils.parse_draws import extract_draws, pool_for_fighter\nfrom utils.parse_registrations import get_swiss_fighters\nd = extract_draws('draws.pdf')\nprint(f'Total categories in draws: {len(d)}')\n# Show only multi-pool categories\nmulti = {k:v for k,v in d.items() if len(set(v.values())) > 1}\nprint(f'Multi-pool categories: {len(multi)}')\nfor cat, fighters in list(multi.items())[:3]:\n    print(f'  {cat}: pools {set(fighters.values())}')\n    for name, pool in list(fighters.items())[:4]: print(f'    pool {pool}: {name}')\nprint()\n# Test matching against real Swiss fighters\nswiss = get_swiss_fighters('registrations.pdf')\nprint(f'Testing pool lookup for {len(swiss)} Swiss fighters:')\nfound = not_found = 0\nfor f in swiss:\n    p = pool_for_fighter(d, f['category_code'], f['name'])\n    if p: found += 1; print(f'  FOUND pool {p}: {f[\\\"name\\\"]} in {f[\\\"category_code\\\"]}')\n    else: not_found += 1\nprint(f'Found: {found}, Not found: {not_found}')\n\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Swiss pool lookup",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 -c \"from utils.parse_draws import extract_draws,pool_for_fighter; from utils.parse_registrations import get_swiss_fighters; d=extract_draws('draws.pdf'); swiss=get_swiss_fighters('registrations.pdf'); hits=[(f['name'],f['category_code'],pool_for_fighter(d,f['category_code'],f['name'])) for f in swiss]; found=[x for x in hits if x[2]]; missing=[x for x in hits if not x[2]]; print(f'Found: {len(found)}  Missing: {len(missing)}'); [print(f'  Pool {p}: {n} | {c}') for n,c,p in found[:30]]\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Pool lookup v2",
+			"type": "shell",
+			"command": "source .venv/bin/activate && python3 << 'EOF'\nfrom utils.parse_draws import extract_draws, pool_for_fighter\nfrom utils.parse_registrations import get_swiss_fighters\nd = extract_draws('draws.pdf')\nswiss = get_swiss_fighters('registrations.pdf')\nhits = [(f['name'], f['category_code'], pool_for_fighter(d, f['category_code'], f['name'])) for f in swiss]\nfound = [x for x in hits if x[2]]\nmissing = [x for x in hits if not x[2]]\nprint(f'Found: {len(found)}  Missing: {len(missing)}')\nfor n,c,p in found[:30]:\n    print(f'  Pool {p}: {n} | {c}')\nprint('--- Missing ---')\nfor n,c,_ in missing[:10]:\n    print(f'  {n} | {c}')\nEOF",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

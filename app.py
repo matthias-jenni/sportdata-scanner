@@ -22,6 +22,7 @@ from flask import (
 
 from utils.parse_registrations import get_swiss_fighters
 from utils.parse_schedule import extract_schedule
+from utils.parse_draws import extract_draws, pool_for_fighter
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -53,11 +54,23 @@ def _cats_match(reg_cat: str, sched_code: str) -> bool:
     return a is not None and b is not None and a == b
 
 
-def _match(fighters: list[dict], schedule: list[dict]) -> list[dict]:
+_POOL_PHASE_RE = _re.compile(r"^Pool\s+(\d+)/", _re.IGNORECASE)
+
+
+def _pool_num_from_phase(phase: str):
+    """Return the pool number (int) from 'Pool N/M', or None for finals/empty."""
+    m = _POOL_PHASE_RE.match(phase or "")
+    return int(m.group(1)) if m else None
+
+
+def _match(fighters: list[dict], schedule: list[dict], draws: dict | None = None) -> list[dict]:
     """
-    The schedule has NO individual fighter names — only category codes per
-    time-slot. We match Swiss fighters by the (discipline, 3-digit-number)
-    key extracted from their category code.
+    Match Swiss fighters to schedule slots by (discipline, 3-digit-number) key.
+
+    When *draws* is provided, pool rounds are filtered so each fighter only
+    appears in their own pool's slot. Finals / Pool-winner / empty phases are
+    always included regardless.  If a fighter's category is not found in draws
+    at all, all their slots are included (we have no pool info to filter on).
     """
     # Build lookup: cat_key -> list of Swiss fighters
     cat_to_swiss: dict[tuple, list[dict]] = {}
@@ -76,17 +89,31 @@ def _match(fighters: list[dict], schedule: list[dict]) -> list[dict]:
             continue
 
         matched_swiss: list[dict] = cat_to_swiss.get(sched_key, [])
+        slot_pool = _pool_num_from_phase(slot.get("phase", ""))
 
         for sw in matched_swiss:
+            # Determine which pool this fighter belongs to (if draws available)
+            fighter_pool = None
+            if draws:
+                fighter_pool = pool_for_fighter(draws, sched_code, sw["name"])
+
+            # Filter pool rounds: if we know the fighter's pool, skip slots
+            # for other pools.  Finals / Pool-winner / empty = always include.
+            if draws and fighter_pool is not None and slot_pool is not None:
+                if fighter_pool != slot_pool:
+                    continue
+
             rows.append({
-                "time":     slot["time"],
-                "time_end": slot.get("time_end", ""),
-                "tatami":   slot["tatami"],
-                "category": sched_code,
-                "phase":    slot.get("phase", ""),
-                "name":     sw["name"],
-                "club":     sw.get("club", ""),
-                "country":  sw.get("country", ""),
+                "time":       slot["time"],
+                "time_end":   slot.get("time_end", ""),
+                "tatami":     slot["tatami"],
+                "category":   sched_code,
+                "phase":      slot.get("phase", ""),
+                "name":       sw["name"],
+                "club":       sw.get("club", ""),
+                "country":    sw.get("country", ""),
+                "pool":       fighter_pool,
+                "pool_label": f"Pool {fighter_pool}" if fighter_pool is not None else "",
             })
 
     # Deduplicate by (time, tatami, name)
@@ -167,9 +194,16 @@ def process():
             reg_file.save(str(reg_path))
             sched_file.save(str(sched_path))
 
+            draws_file = request.files.get("draws")
+            draws = {}
+            if draws_file and draws_file.filename:
+                draws_path = tmp / "draws.pdf"
+                draws_file.save(str(draws_path))
+                draws = extract_draws(str(draws_path))
+
             swiss_fighters = get_swiss_fighters(str(reg_path))
             schedule = extract_schedule(str(sched_path))
-            rows = _match(swiss_fighters, schedule)
+            rows = _match(swiss_fighters, schedule, draws)
 
         if not swiss_fighters:
             flash("No Swiss fighters found in the registrations PDF. "
@@ -181,6 +215,7 @@ def process():
             rows=rows,
             swiss_count=len(swiss_fighters),
             fighter_list=swiss_fighters,
+            draws_used=bool(draws),
         )
 
     except Exception:
@@ -198,6 +233,7 @@ def download_pdf():
         rows_json = request.form.get("rows_json", "[]")
         swiss_count = int(request.form.get("swiss_count", 0))
         fighter_list_json = request.form.get("fighter_list_json", "[]")
+        draws_used = request.form.get("draws_used", "false") == "true"
 
         rows = json.loads(rows_json)
         fighter_list = json.loads(fighter_list_json)
@@ -207,6 +243,7 @@ def download_pdf():
             rows=rows,
             swiss_count=swiss_count,
             fighter_list=fighter_list,
+            draws_used=draws_used,
             pdf_mode=True,
         )
         pdf_bytes = HTML(string=html_str).write_pdf()
