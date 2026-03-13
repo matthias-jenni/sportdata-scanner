@@ -228,6 +228,8 @@ def process():
             swiss_count=len(swiss_fighters),
             fighter_list=swiss_fighters,
             draws_used=bool(draws),
+            draws_count=len(draws),
+            schedule_count=len(schedule),
             cache_name=cache_name,
             cache_slug=slug,
         )
