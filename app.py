@@ -5,7 +5,6 @@ Upload two PDFs (registrations + schedule) and get back a
 chronological timetable of all Swiss fighters.
 """
 
-import io
 import os
 import traceback
 
@@ -16,8 +15,6 @@ from flask import (
     redirect,
     url_for,
     flash,
-    send_file,
-    session,
 )
 
 from utils.parse_registrations import get_swiss_fighters
@@ -262,43 +259,6 @@ def delete_cache(slug):
     _cache.delete(slug)
     flash(f"Cache deleted.", "success")
     return redirect(url_for("index"))
-
-
-@app.route("/download-pdf", methods=["POST"])
-def download_pdf():
-    """Render the result HTML to a PDF and stream it back."""
-    try:
-        import json
-        from weasyprint import HTML
-
-        rows_json = request.form.get("rows_json", "[]")
-        swiss_count = int(request.form.get("swiss_count", 0))
-        fighter_list_json = request.form.get("fighter_list_json", "[]")
-        draws_used = request.form.get("draws_used", "false") == "true"
-        cache_name = request.form.get("cache_name", "")
-
-        rows = json.loads(rows_json)
-        fighter_list = json.loads(fighter_list_json)
-
-        html_str = render_template(
-            "result.html",
-            rows=rows,
-            swiss_count=swiss_count,
-            fighter_list=fighter_list,
-            draws_used=draws_used,
-            cache_name=cache_name,
-            pdf_mode=True,
-        )
-        pdf_bytes = HTML(string=html_str).write_pdf()
-        return send_file(
-            io.BytesIO(pdf_bytes),
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name="swiss_timetable.pdf",
-        )
-    except Exception:
-        flash(f"PDF export failed: {traceback.format_exc()}", "error")
-        return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
