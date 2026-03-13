@@ -108,9 +108,13 @@
           <div class="form-text">Name for the saved result. Defaults to today's date.</div>
         </div>
 
-        <button type="submit" class="btn btn-primary w-100 py-2 fs-5">
+        <button type="submit" class="btn btn-primary w-100 py-2 fs-5" id="submit-btn">
           Generate Timetable →
         </button>
+        <div id="loading" class="text-center mt-3" style="display:none">
+          <div class="spinner-border text-danger" role="status"></div>
+          <p class="text-muted small mt-2 mb-0">Parsing PDFs… this can take up to a minute.</p>
+        </div>
       </form>
 
       <hr class="my-3"/>
@@ -160,5 +164,13 @@
   src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
   crossorigin="anonymous"
 ></script>
+<script>
+  document.getElementById('submit-btn').closest('form').addEventListener('submit', function() {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Parsing…';
+    document.getElementById('loading').style.display = 'block';
+  });
+</script>
 </body>
 </html>
