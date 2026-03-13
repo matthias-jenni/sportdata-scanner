@@ -42,16 +42,30 @@ def extract_fighters(pdf_path: str) -> list[dict]:
 
 
 def get_swiss_fighters(pdf_path: str) -> list[dict]:
-    """Return Swiss fighters only, deduplicated by (name, category_code)."""
+    """Return Swiss fighters only, deduplicated by (name, category_code).
+    When duplicates exist, prefer the entry that has club data.
+    A second pass fills empty clubs from other categories of the same fighter.
+    """
     lines = _extract_lines(pdf_path)
     fighters = _parse_lines(lines, swiss_only=True)
-    seen = set()
-    unique = []
+
+    # Merge duplicates per (name, category): keep best club (non-empty wins)
+    best: dict[tuple, dict] = {}
     for f in fighters:
         key = (f['name'].lower(), f['category_code'].lower())
-        if key not in seen:
-            seen.add(key)
-            unique.append(f)
+        if key not in best or (not best[key]['club'] and f['club']):
+            best[key] = f
+    unique = list(best.values())
+
+    # Second pass: propagate club from any other category of the same fighter
+    name_to_club: dict[str, str] = {}
+    for f in unique:
+        if f['club']:
+            name_to_club[f['name'].lower()] = f['club']
+    for f in unique:
+        if not f['club']:
+            f['club'] = name_to_club.get(f['name'].lower(), '')
+
     return unique
 
 
@@ -173,15 +187,20 @@ def _country_from_text(text: str) -> str:
 
 
 def _extract_club(before: str, name: str) -> str:
-    """Extract club = everything before the name in the before string."""
+    """Extract club = everything before the fighter name.
+
+    The raw format is:  CLUB_NAME(CODE)[,] FIGHTER_NAME
+    e.g. 'SWITZERLAND(WAKOSUI), ENZL JAN'  -> 'SWITZERLAND(WAKOSUI)'
+         'POWER SPORT CLUB(WAKOSUI-ABY), NAME' -> 'POWER SPORT CLUB(WAKOSUI-ABY)'
+    Country/city words are intentional parts of the club name and must not
+    be stripped.
+    """
     idx = before.rfind(name)
     if idx > 0:
         club = before[:idx].strip().strip(',').strip()
-        # Remove inline country name from club string
-        club = re.sub(
-            r'\b(?:SWITZERLAND|SCHWEIZ|SUISSE|SVIZZERA|AUSTRIA|GERMANY'
-            r'|FRANCE|ITALY|ITALIA|HUNGARY)\b',
-            '', club, flags=re.IGNORECASE
-        ).strip().strip(',').strip()
+        # Discard partial lines where the club code was cut off onto a prev line
+        # (e.g. 'ABY) NAME' or 'AAA) NAME').
+        if club.startswith(')') or re.match(r'^[A-Z]{2,4}\)', club):
+            return ''
         return club
     return ''
