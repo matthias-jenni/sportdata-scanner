@@ -64,7 +64,60 @@
       padding: 1rem 1.1rem;
       margin-bottom: .85rem;
       box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      transition: opacity .3s;
     }
+    .fight-card.past {
+      opacity: .35;
+      background: #f0f0f0;
+      box-shadow: none;
+    }
+    .fight-card.past-hidden { display: none !important; }
+    .fight-card.filter-hidden { display: none !important; }
+    .fight-card.past .badge-time { background: #888 !important; }
+    .fight-card.past .badge-tatami { background: #aaa !important; }
+
+    /* ---- Up next ---- */
+    .fight-card.up-next {
+      border-left: 4px solid #28a745;
+      box-shadow: 0 0 0 2px rgba(40,167,69,.18), 0 2px 12px rgba(0,0,0,.1);
+    }
+    .up-next-label {
+      font-size: .68rem;
+      font-weight: 700;
+      color: #28a745;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: .3rem;
+    }
+
+    /* ---- Table past rows ---- */
+    tr.past td { color: #aaa !important; }
+    tr.past .badge-time { background: #aaa !important; }
+    tr.past .badge-tatami { background: #bbb !important; }
+    tr.past strong { color: #aaa !important; font-weight: 400 !important; }
+    tr.past-hidden { display: none !important; }
+    tr.filter-hidden { display: none !important; }
+    tr.up-next td:first-child { border-left: 3px solid #28a745; }
+
+    /* ---- Search bar ---- */
+    .search-bar {
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      background: #f4f6f9;
+      padding: .5rem 1rem .4rem;
+      margin: 0 -1rem .75rem;
+    }
+    .search-bar input {
+      border-radius: 2rem;
+      border: 1.5px solid #ccc;
+      padding: .45rem 1rem;
+      width: 100%;
+      font-size: .95rem;
+      background: #fff;
+      outline: none;
+    }
+    .search-bar input:focus { border-color: #d00; box-shadow: 0 0 0 2px rgba(204,0,0,.12); }
     .fc-header {
       display: flex;
       justify-content: space-between;
@@ -138,6 +191,11 @@
 
   {% if rows %}
 
+  {# ======= SEARCH BAR (mobile-first, also useful on desktop) ======= #}
+  <div class="search-bar">
+    <input type="search" id="name-filter" placeholder="🔍 Filter by name…" autocomplete="off" />
+  </div>
+
   {# ======= DESKTOP TABLE ======= #}
   <div class="fight-table-wrapper table-responsive mb-5">
     <table class="table table-striped table-hover align-middle">
@@ -154,7 +212,7 @@
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr>
+        <tr data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}">
           <td>
             <span class="badge-time">{{ r.time }}</span>
             {% if r.time_end %}<br><span class="text-muted" style="font-size:.75rem">– {{ r.time_end }}</span>{% endif %}
@@ -174,7 +232,8 @@
   {# ======= MOBILE CARDS ======= #}
   <div class="fight-cards mb-5">
     {% for r in rows %}
-    <div class="fight-card">
+    <div class="fight-card" data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}">
+      <div class="up-next-label" style="display:none">▶ Up next</div>
       <div class="fc-header">
         <span class="badge-time">{{ r.time }}{% if r.time_end %} – {{ r.time_end }}{% endif %}</span>
         <span class="badge-tatami">{{ r.tatami }}</span>
@@ -216,16 +275,107 @@
 
 </div>{# /container #}
 
-{# Sticky download bar #}
+{# Sticky bottom bar #}
 <div class="dl-bar">
   <button class="btn btn-red" onclick="window.print()">🖨️ Print / Save as PDF</button>
-  <span class="text-muted small ms-auto">{{ rows|length }} entry{% if rows|length != 1 %}s{% endif %}</span>
+  <button class="btn btn-outline-secondary btn-sm" id="past-toggle" onclick="togglePast()" style="display:none"></button>
+  <span class="text-muted small ms-auto" id="visible-count"></span>
 </div>
 
 <script
   src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
   crossorigin="anonymous"
 ></script>
+<script>
+  let showPast = false;
+  let filterQ  = '';
+
+  function toMin(hhmm) {
+    const p = hhmm.split(':');
+    return p.length === 2 ? parseInt(p[0]) * 60 + parseInt(p[1]) : -1;
+  }
+
+  function update() {
+    const now = new Date();
+    const cur = now.getHours() * 60 + now.getMinutes();
+
+    let pastCount = 0, upNextDone = false, visibleCount = 0;
+
+    // ---- cards ----
+    const cards = document.querySelectorAll('.fight-card');
+    cards.forEach(c => {
+      const end  = toMin(c.dataset.end  || '');
+      const name = c.dataset.name || '';
+      const isPast = end >= 0 && cur > end;
+      const matchesFilter = !filterQ || name.includes(filterQ);
+
+      c.classList.toggle('past', isPast);
+      c.querySelector('.up-next-label').style.display = 'none';
+      c.classList.remove('up-next');
+
+      if (isPast) pastCount++;
+
+      const hidden = (isPast && !showPast) || !matchesFilter;
+      c.classList.toggle('past-hidden',   isPast && !showPast);
+      c.classList.toggle('filter-hidden', !matchesFilter);
+
+      if (!hidden) visibleCount++;
+
+      if (!isPast && !hidden && !upNextDone) {
+        c.classList.add('up-next');
+        c.querySelector('.up-next-label').style.display = 'block';
+        upNextDone = true;
+      }
+    });
+
+    // ---- table rows ----
+    let tableUpNextDone = false;
+    document.querySelectorAll('tr[data-end]').forEach(r => {
+      const end  = toMin(r.dataset.end  || '');
+      const name = r.dataset.name || '';
+      const isPast = end >= 0 && cur > end;
+      const matchesFilter = !filterQ || name.includes(filterQ);
+
+      r.classList.toggle('past', isPast);
+      r.classList.toggle('past-hidden',   isPast && !showPast);
+      r.classList.toggle('filter-hidden', !matchesFilter);
+      r.classList.remove('up-next');
+
+      if (!isPast && matchesFilter && !tableUpNextDone) {
+        r.classList.add('up-next');
+        tableUpNextDone = true;
+      }
+    });
+
+    // ---- bottom bar ----
+    const toggleBtn = document.getElementById('past-toggle');
+    toggleBtn.style.display = pastCount > 0 ? '' : 'none';
+    toggleBtn.textContent   = showPast
+      ? `Hide ${pastCount} past`
+      : `Show ${pastCount} past`;
+
+    const vc = document.getElementById('visible-count');
+    vc.textContent = `${visibleCount} shown`;
+  }
+
+  function togglePast() {
+    showPast = !showPast;
+    update();
+    if (showPast) {
+      // scroll first past card into view
+      const first = document.querySelector('.fight-card.past');
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  document.getElementById('name-filter').addEventListener('input', function() {
+    filterQ = this.value.trim().toLowerCase();
+    update();
+  });
+
+  update();
+  setInterval(update, 30000);
+</script>
 
 </body>
 </html>
