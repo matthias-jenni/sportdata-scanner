@@ -99,6 +99,41 @@
     tr.filter-hidden { display: none !important; }
     tr.up-next td:first-child { border-left: 3px solid #28a745; }
 
+    /* ---- Eliminated (manual, trumps past) ---- */
+    .fight-card.eliminated {
+      opacity: .45;
+      background: #f8f0f0;
+      box-shadow: none;
+    }
+    .fight-card.eliminated .fc-name { text-decoration: line-through; color: #888; }
+    .fight-card.eliminated .badge-time  { background: #888 !important; }
+    .fight-card.eliminated .badge-tatami{ background: #aaa !important; }
+    tr.eliminated td { color: #bbb !important; text-decoration: line-through; }
+    tr.eliminated strong { color: #bbb !important; font-weight: 400 !important; }
+    tr.eliminated .badge-time  { background: #bbb !important; }
+    tr.eliminated .badge-tatami{ background: #ccc !important; }
+    .fight-card.eliminated-hidden { display: none !important; }
+    tr.eliminated-hidden { display: none !important; }
+
+    /* ---- Eliminate button ---- */
+    .elim-btn {
+      background: none;
+      border: 1.5px solid #ddd;
+      border-radius: .4rem;
+      color: #bbb;
+      font-size: .75rem;
+      line-height: 1;
+      padding: .2rem .45rem;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .elim-btn:hover { color: #c00; border-color: #c00; }
+    .eliminated .elim-btn { color: #c00; border-color: #c00; }
+    /* table variant — tiny, no border */
+    td .elim-btn { border: none; font-size: .8rem; padding: .1rem .3rem; }
+
     /* ---- Search bar ---- */
     .search-bar {
       position: sticky;
@@ -208,11 +243,12 @@
           <th>Phase</th>
           <th>Tatami</th>
           <th>Club</th>
+          <th style="width:2.5rem"></th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}">
+        <tr data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}" data-key="{{ r.name | lower }}|{{ r.category | lower }}">
           <td>
             <span class="badge-time">{{ r.time }}</span>
             {% if r.time_end %}<br><span class="text-muted" style="font-size:.75rem">– {{ r.time_end }}</span>{% endif %}
@@ -223,6 +259,7 @@
           <td><span class="text-muted small">{{ r.phase }}</span></td>
           <td><span class="badge-tatami">{{ r.tatami }}</span></td>
           <td class="text-muted small">{{ r.club }}</td>
+          <td><button class="elim-btn" title="Mark as eliminated">✕</button></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -232,11 +269,12 @@
   {# ======= MOBILE CARDS ======= #}
   <div class="fight-cards mb-5">
     {% for r in rows %}
-    <div class="fight-card" data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}">
+    <div class="fight-card" data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}" data-key="{{ r.name | lower }}|{{ r.category | lower }}">
       <div class="up-next-label" style="display:none">▶ Up next</div>
       <div class="fc-header">
         <span class="badge-time">{{ r.time }}{% if r.time_end %} – {{ r.time_end }}{% endif %}</span>
         <span class="badge-tatami">{{ r.tatami }}</span>
+        <button class="elim-btn" title="Mark as eliminated">✕</button>
       </div>
       <div class="fc-name">{{ r.name }}</div>
       <div class="fc-cat">{{ r.category }}</div>
@@ -279,6 +317,7 @@
 <div class="dl-bar">
   <button class="btn btn-red" onclick="window.print()">🖨️ Print / Save as PDF</button>
   <button class="btn btn-outline-secondary btn-sm" id="past-toggle" onclick="togglePast()" style="display:none"></button>
+  <button class="btn btn-outline-danger btn-sm" id="elim-toggle" onclick="toggleElim()" style="display:none"></button>
   <span class="text-muted small ms-auto" id="visible-count"></span>
 </div>
 
@@ -287,7 +326,35 @@
   crossorigin="anonymous"
 ></script>
 <script>
+  // ---- Eliminated state (localStorage, keyed by page path) ----
+  const ELIM_KEY = 'elim:' + window.location.pathname;
+  let eliminated = new Set(JSON.parse(localStorage.getItem(ELIM_KEY) || '[]'));
+
+  function saveEliminated() {
+    localStorage.setItem(ELIM_KEY, JSON.stringify([...eliminated]));
+  }
+
+  function toggleEliminated(key) {
+    if (eliminated.has(key)) {
+      eliminated.delete(key);
+    } else {
+      eliminated.add(key);
+    }
+    saveEliminated();
+    update();
+  }
+
+  // Wire eliminate buttons (works for both cards and table rows)
+  document.querySelectorAll('.elim-btn').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const el = this.closest('[data-key]');
+      if (el) toggleEliminated(el.dataset.key);
+    });
+  });
+
   let showPast = false;
+  let showElim = false;
   let filterQ  = '';
 
   function toMin(hhmm) {
@@ -299,7 +366,7 @@
     const now = new Date();
     const cur = now.getHours() * 60 + now.getMinutes();
 
-    let pastCount = 0, upNextDone = false, visibleCount = 0;
+    let pastCount = 0, elimCount = 0, upNextDone = false, visibleCount = 0;
 
     // ---- cards ----
     const cards = document.querySelectorAll('.fight-card');
@@ -307,23 +374,30 @@
       const end  = toMin(c.dataset.end  || '');
       const name = c.dataset.name || '';
       const isPast = end >= 0 && cur > end;
+      const isElim = eliminated.has(c.dataset.key || '');
       const matchesFilter = !filterQ || name.includes(filterQ)
                          || (c.dataset.cat  || '').includes(filterQ)
                          || (c.dataset.club || '').includes(filterQ);
 
-      c.classList.toggle('past', isPast);
+      c.classList.toggle('past', isPast && !isElim);
+      c.classList.toggle('eliminated', isElim);
       c.querySelector('.up-next-label').style.display = 'none';
       c.classList.remove('up-next');
 
-      if (isPast) pastCount++;
+      const btn = c.querySelector('.elim-btn');
+      if (btn) { btn.textContent = isElim ? '↩' : '✕'; btn.title = isElim ? 'Restore fighter' : 'Mark as eliminated'; }
 
-      const hidden = (isPast && !showPast) || !matchesFilter;
-      c.classList.toggle('past-hidden',   isPast && !showPast);
+      if (isPast && !isElim) pastCount++;
+      if (isElim) elimCount++;
+
+      const hidden = (isPast && !isElim && !showPast) || (isElim && !showElim) || !matchesFilter;
+      c.classList.toggle('past-hidden',     isPast && !isElim && !showPast);
+      c.classList.toggle('eliminated-hidden', isElim && !showElim);
       c.classList.toggle('filter-hidden', !matchesFilter);
 
       if (!hidden) visibleCount++;
 
-      if (!isPast && !hidden && !upNextDone) {
+      if (!isPast && !isElim && !hidden && !upNextDone) {
         c.classList.add('up-next');
         c.querySelector('.up-next-label').style.display = 'block';
         upNextDone = true;
@@ -336,16 +410,22 @@
       const end  = toMin(r.dataset.end  || '');
       const name = r.dataset.name || '';
       const isPast = end >= 0 && cur > end;
+      const isElim = eliminated.has(r.dataset.key || '');
       const matchesFilter = !filterQ || name.includes(filterQ)
                          || (r.dataset.cat  || '').includes(filterQ)
                          || (r.dataset.club || '').includes(filterQ);
 
-      r.classList.toggle('past', isPast);
-      r.classList.toggle('past-hidden',   isPast && !showPast);
+      r.classList.toggle('past', isPast && !isElim);
+      r.classList.toggle('eliminated', isElim);
+      r.classList.toggle('past-hidden',       isPast && !isElim && !showPast);
+      r.classList.toggle('eliminated-hidden', isElim && !showElim);
       r.classList.toggle('filter-hidden', !matchesFilter);
       r.classList.remove('up-next');
 
-      if (!isPast && matchesFilter && !tableUpNextDone) {
+      const btn = r.querySelector('.elim-btn');
+      if (btn) { btn.textContent = isElim ? '↩' : '✕'; btn.title = isElim ? 'Restore fighter' : 'Mark as eliminated'; }
+
+      if (!isPast && !isElim && matchesFilter && !tableUpNextDone) {
         r.classList.add('up-next');
         tableUpNextDone = true;
       }
@@ -358,8 +438,19 @@
       ? `Hide ${pastCount} past`
       : `Show ${pastCount} past`;
 
+    const elimBtn = document.getElementById('elim-toggle');
+    elimBtn.style.display = elimCount > 0 ? '' : 'none';
+    elimBtn.textContent   = showElim
+      ? `Hide ${elimCount} eliminated`
+      : `Show ${elimCount} eliminated`;
+
     const vc = document.getElementById('visible-count');
     vc.textContent = `${visibleCount} shown`;
+  }
+
+  function toggleElim() {
+    showElim = !showElim;
+    update();
   }
 
   function togglePast() {
