@@ -114,6 +114,19 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
 
         # --- extract name: rightmost uppercase words before the icon ---
         name = _extract_name(before)
+
+        # --- fallback: name is split across adjacent lines ---
+        # Small Switzerland-only PDF layout:
+        #   prev_line: CLUB(CODE- LASTNAME
+        #   sep_line:  \uf007 CATEGORY   (or CLUB(CODE) \uf007 CATEGORY)
+        #   next_line: CODE) FIRSTNAME
+        if not name:
+            prev_line = lines[i - 1] if i > 0 else ''
+            next_line = lines[i + 1] if i + 1 < n else ''
+            prev_tokens = _caps_tail(prev_line)
+            next_tokens = _caps_after_paren(next_line)
+            name = ' '.join(prev_tokens + next_tokens)
+
         if not name:
             continue
 
@@ -152,6 +165,41 @@ _SKIP_WORDS = {
     'TORINO', 'NAPOLI', 'PARIS', 'LYON', 'MADRID', 'BARCELONA',
     'SEKTION', 'ABTEILUNG', 'SECTION',
 }
+
+
+def _caps_tail(s: str) -> list[str]:
+    """
+    Returns the single rightmost all-caps name token from a line,
+    stopping (and discarding) if we hit a word containing '(' (= club code).
+    Only one token is returned — that's enough for the surname fallback.
+    """
+    tokens = s.strip().split()
+    for tok in reversed(tokens):
+        tok_clean = tok.rstrip(',-;')
+        if '(' in tok_clean:
+            break  # reached club-code word, give up
+        if _ALL_CAPS_WORD_RE.match(tok_clean) and len(tok_clean) > 1 and tok_clean not in _SKIP_WORDS:
+            return [tok_clean]  # return just the rightmost name word
+        else:
+            break  # non-caps word — stop
+    return []
+
+
+def _caps_after_paren(s: str) -> list[str]:
+    """
+    All-caps name tokens from a line, taken from AFTER the first ')' if one
+    exists, or from the whole line if there is no ')'.
+    Handles 'ADB) CRESCINI FRANK' → ['CRESCINI', 'FRANK']
+    and 'VERENA' → ['VERENA'].
+    """
+    idx = s.find(')')
+    tail = s[idx + 1:] if idx >= 0 else s
+    tokens = []
+    for tok in tail.split():
+        tok_clean = tok.rstrip(',-;')
+        if _ALL_CAPS_WORD_RE.match(tok_clean) and len(tok_clean) > 1 and tok_clean not in _SKIP_WORDS:
+            tokens.append(tok_clean)
+    return tokens
 
 
 def _extract_name(before: str) -> str:
