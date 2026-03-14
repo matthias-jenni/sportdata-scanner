@@ -20,6 +20,7 @@ from datetime import datetime
 
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-\u2013]\s*(\d{1,2}:\d{2})")
 _TATAMI_RE     = re.compile(r"tatami\s*0*(\d+)", re.IGNORECASE)
+_AREA_NUM_RE   = re.compile(r"^\d+$")   # bare area number like "1", "2", "12"
 # Strip trailing "(N)" count from category codes like "01 PF 034 OC M -37 kg (10)"
 _COUNT_RE      = re.compile(r"\s*\(\d+\)\s*$")
 
@@ -40,14 +41,33 @@ def _parse_page(page) -> list[dict]:
 
     table = tables[0]  # one table per page
 
-    # --- detect tatami from first few rows ---
+    # --- detect tatami from first few rows (any cell) ---
     tatami = ""
-    for row in table[:3]:
-        cell = str(row[0] or "").strip()
-        m = _TATAMI_RE.search(cell)
+    for row in table[:4]:
+        for cell in row:
+            m = _TATAMI_RE.search(str(cell or ""))
+            if m:
+                tatami = f"Tatami {int(m.group(1)):02d}"
+                break
+        if tatami:
+            break
+
+    # --- fallback: scan page text outside the table ---
+    if not tatami:
+        page_text = page.extract_text() or ""
+        m = _TATAMI_RE.search(page_text)
         if m:
             tatami = f"Tatami {int(m.group(1)):02d}"
-            break
+
+    # --- fallback: new "Area" format — number is in column 1 of data rows ---
+    if not tatami:
+        for row in table:
+            if not row or len(row) < 2:
+                continue
+            area = str(row[1] or "").strip()
+            if _AREA_NUM_RE.match(area) and _TIME_RANGE_RE.search(str(row[0] or "")):
+                tatami = f"Tatami {int(area):02d}"
+                break
 
     fights = []
     for row in table:
