@@ -164,6 +164,27 @@ _SKIP_WORDS = {
     'WIEN', 'BUDAPEST', 'PRAGUE', 'WARSAW', 'ROME', 'MILANO',
     'TORINO', 'NAPOLI', 'PARIS', 'LYON', 'MADRID', 'BARCELONA',
     'SEKTION', 'ABTEILUNG', 'SECTION',
+    # Additional Swiss city/region names that appear in club names
+    'BADEN', 'BRUGG', 'WETTINGEN', 'ZURZACH', 'AARGAU', 'SOLOTHURN',
+    'FRIBOURG', 'FREIBURG', 'NEUCHATEL', 'SION', 'SIERRE', 'VISP',
+    'SCHAFFHAUSEN', 'FRAUENFELD', 'KREUZLINGEN', 'WEINFELDEN',
+    'USTER', 'BUELACH', 'DIELSDORF', 'HORGEN', 'MEILEN', 'PFAEFFIKON',
+    'DIETIKON', 'SCHLIEREN', 'REGENSDORF', 'OPFIKON', 'KLOTEN',
+    'OSTERMUNDIGEN', 'MURI', 'KONIZ', 'ZOLLIKOFEN', 'BURGDORF',
+    'LANGENTHAL', 'BIEL', 'LYSS', 'AARBERG', 'LYSS', 'GRENCHEN',
+    'OLTEN', 'AARAU', 'LENZBURG', 'BRUGG', 'RHEINFELDEN',
+    'LIESTAL', 'ARLESHEIM', 'ARAU', 'ALLSCHWIL', 'REINACH',
+    'ARTH', 'ZUG', 'BAAR', 'CHAM', 'STEINHAUSEN', 'ROTKREUZ',
+    'EMMEN', 'KRIENS', 'HORW', 'STANS', 'SARNEN',
+    'GLARUS', 'UZNACH', 'RAPPERSWIL', 'WIL', 'GOSSAU',
+    'ROMANSHORN', 'ARBON', 'RORSCHACH', 'ALTENRHEIN',
+    'RHEIN', 'LIMMAT', 'REUSS', 'REGION', 'NORD', 'SUD', 'OST', 'WEST',
+    'NORD', 'SUED', 'OST', 'WEST',
+    # Common generic club words that prefix fighter names
+    'CLUB', 'KLUB', 'SPORT', 'SPORTS', 'TEAM', 'ACADEMY',
+    'KARATE', 'KICKBOXING', 'BOXEN', 'BOXING', 'FITNESS',
+    'KAMPFKUNST', 'KAMPFSPORT', 'MARTIAL', 'ARTS', 'MUAY', 'THAI',
+    'INTERNATIONAL', 'NATIONAL', 'REGIONAL',
 }
 
 
@@ -220,7 +241,13 @@ def _extract_name(before: str) -> str:
             name_tokens.insert(0, tok_clean)
         else:
             break
-    return ' '.join(name_tokens)
+    name = ' '.join(name_tokens)
+    # Backstop: if the name consumed ALL of the cleaned text, there's nothing
+    # left to be the club — meaning this line is club-only (split-line format)
+    # and the name actually lives on an adjacent line.
+    if name and name == cleaned:
+        return ''
+    return name
 
 
 def _country_from_text(text: str) -> str:
