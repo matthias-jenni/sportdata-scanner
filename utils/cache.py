@@ -1,14 +1,27 @@
 """
-utils/cache.py – persist parsed results to JSON files.
+utils/cache.py – persist parsed results.
 
-Cache directory: $CACHE_DIR env var, or  <project_root>/cache/
-Each entry is a single JSON file named  <slug>.json
+Backend selection (automatic):
+  • If SUPABASE_URL + SUPABASE_KEY env vars are set → Supabase Postgres
+  • Otherwise → local JSON files in $CACHE_DIR (default: <project_root>/cache/)
 
-Cache entry schema:
+Supabase table (run once in your Supabase SQL editor):
+
+    CREATE TABLE caches (
+        slug         TEXT PRIMARY KEY,
+        name         TEXT        NOT NULL,
+        created      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        swiss_count  INTEGER     NOT NULL DEFAULT 0,
+        draws_used   BOOLEAN     NOT NULL DEFAULT false,
+        rows         JSONB       NOT NULL DEFAULT '[]',
+        fighter_list JSONB       NOT NULL DEFAULT '[]'
+    );
+
+Cache entry schema (both backends):
 {
-    "name":         str,       # human-readable label
-    "slug":         str,       # filename-safe version of name
-    "created":      str,       # ISO-8601 datetime
+    "name":         str,
+    "slug":         str,
+    "created":      str,   # ISO-8601
     "swiss_count":  int,
     "draws_used":   bool,
     "rows":         list[dict],
@@ -23,7 +36,25 @@ import pathlib
 import re
 from datetime import datetime
 
-_HERE = pathlib.Path(__file__).resolve().parent.parent  # project root
+# ---------------------------------------------------------------------------
+# Supabase client (only initialised when env vars are present)
+# ---------------------------------------------------------------------------
+_SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+_SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
+_TABLE = "caches"
+
+_sb = None  # supabase Client or None
+if _SUPABASE_URL and _SUPABASE_KEY:
+    try:
+        from supabase import create_client  # type: ignore
+        _sb = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+    except Exception as exc:  # pragma: no cover
+        print(f"[cache] Supabase init failed, falling back to local files: {exc}")
+
+# ---------------------------------------------------------------------------
+# Local-file fallback
+# ---------------------------------------------------------------------------
+_HERE = pathlib.Path(__file__).resolve().parent.parent
 CACHE_DIR = pathlib.Path(os.environ.get("CACHE_DIR", str(_HERE / "cache")))
 
 
@@ -31,8 +62,11 @@ def _ensure_dir():
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
 def _slugify(name: str) -> str:
-    """Convert a name to a safe lowercase filename slug."""
     slug = name.strip().lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
     slug = re.sub(r"[\s_]+", "-", slug)
@@ -41,9 +75,12 @@ def _slugify(name: str) -> str:
 
 
 def default_name() -> str:
-    """Return today's date as default cache name, e.g. '2026-03-13'."""
     return datetime.now().strftime("%Y-%m-%d")
 
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def save(
     name: str,
@@ -52,11 +89,7 @@ def save(
     swiss_count: int,
     draws_used: bool,
 ) -> str:
-    """
-    Persist a result set.  Returns the slug used as the cache key.
-    If a cache with the same slug already exists it is overwritten.
-    """
-    _ensure_dir()
+    """Persist a result set. Returns the slug. Overwrites existing same-slug entry."""
     slug = _slugify(name)
     entry = {
         "name":         name.strip() or default_name(),
@@ -67,46 +100,75 @@ def save(
         "rows":         rows,
         "fighter_list": fighter_list,
     }
-    path = CACHE_DIR / f"{slug}.json"
-    path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    if _sb:
+        _sb.table(_TABLE).upsert(entry).execute()
+    else:
+        _ensure_dir()
+        path = CACHE_DIR / f"{slug}.json"
+        path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
     return slug
 
 
 def load(slug: str) -> dict | None:
     """Load a cache entry by slug. Returns None if not found."""
-    path = CACHE_DIR / f"{slug}.json"
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    if _sb:
+        res = _sb.table(_TABLE).select("*").eq("slug", slug).maybe_single().execute()
+        return res.data if res.data else None
+    else:
+        path = CACHE_DIR / f"{slug}.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
 
 
 def list_all() -> list[dict]:
-    """
-    Return all cached entries sorted newest-first.
-    Each item contains only metadata (no rows/fighter_list) for fast listing.
-    """
-    _ensure_dir()
-    entries = []
-    for p in sorted(CACHE_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            entries.append({
-                "slug":        data.get("slug", p.stem),
-                "name":        data.get("name", p.stem),
-                "created":     data.get("created", ""),
-                "swiss_count": data.get("swiss_count", 0),
-                "draws_used":  data.get("draws_used", False),
-                "row_count":   len(data.get("rows", [])),
+    """Return all cached entries sorted newest-first (metadata only, no rows)."""
+    if _sb:
+        res = (
+            _sb.table(_TABLE)
+            .select("slug,name,created,swiss_count,draws_used,rows")
+            .order("created", desc=True)
+            .execute()
+        )
+        out = []
+        for d in (res.data or []):
+            out.append({
+                "slug":        d["slug"],
+                "name":        d["name"],
+                "created":     d.get("created", ""),
+                "swiss_count": d.get("swiss_count", 0),
+                "draws_used":  d.get("draws_used", False),
+                "row_count":   len(d.get("rows") or []),
             })
-        except Exception:
-            pass
-    return entries
+        return out
+    else:
+        _ensure_dir()
+        entries = []
+        for p in sorted(CACHE_DIR.glob("*.json"),
+                        key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                entries.append({
+                    "slug":        data.get("slug", p.stem),
+                    "name":        data.get("name", p.stem),
+                    "created":     data.get("created", ""),
+                    "swiss_count": data.get("swiss_count", 0),
+                    "draws_used":  data.get("draws_used", False),
+                    "row_count":   len(data.get("rows", [])),
+                })
+            except Exception:
+                pass
+        return entries
 
 
 def delete(slug: str) -> bool:
     """Delete a cache entry. Returns True if deleted, False if not found."""
-    path = CACHE_DIR / f"{slug}.json"
-    if path.exists():
-        path.unlink()
-        return True
-    return False
+    if _sb:
+        res = _sb.table(_TABLE).delete().eq("slug", slug).execute()
+        return bool(res.data)
+    else:
+        path = CACHE_DIR / f"{slug}.json"
+        if path.exists():
+            path.unlink()
+            return True
+        return False
