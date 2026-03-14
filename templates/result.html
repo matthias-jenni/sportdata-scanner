@@ -193,7 +193,7 @@
 
   {# ======= SEARCH BAR (mobile-first, also useful on desktop) ======= #}
   <div class="search-bar">
-    <input type="search" id="name-filter" placeholder="🔍 Filter by name…" autocomplete="off" />
+    <input type="search" id="name-filter" placeholder="🔍 Filter by name, category or club…" autocomplete="off" />
   </div>
 
   {# ======= DESKTOP TABLE ======= #}
@@ -212,7 +212,7 @@
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}">
+        <tr data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}">
           <td>
             <span class="badge-time">{{ r.time }}</span>
             {% if r.time_end %}<br><span class="text-muted" style="font-size:.75rem">– {{ r.time_end }}</span>{% endif %}
@@ -232,7 +232,7 @@
   {# ======= MOBILE CARDS ======= #}
   <div class="fight-cards mb-5">
     {% for r in rows %}
-    <div class="fight-card" data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}">
+    <div class="fight-card" data-end="{{ r.time_end or r.time }}" data-name="{{ r.name | lower }}" data-cat="{{ r.category | lower }}" data-club="{{ r.club | lower }}">
       <div class="up-next-label" style="display:none">▶ Up next</div>
       <div class="fc-header">
         <span class="badge-time">{{ r.time }}{% if r.time_end %} – {{ r.time_end }}{% endif %}</span>
@@ -307,7 +307,9 @@
       const end  = toMin(c.dataset.end  || '');
       const name = c.dataset.name || '';
       const isPast = end >= 0 && cur > end;
-      const matchesFilter = !filterQ || name.includes(filterQ);
+      const matchesFilter = !filterQ || name.includes(filterQ)
+                         || (c.dataset.cat  || '').includes(filterQ)
+                         || (c.dataset.club || '').includes(filterQ);
 
       c.classList.toggle('past', isPast);
       c.querySelector('.up-next-label').style.display = 'none';
@@ -334,7 +336,9 @@
       const end  = toMin(r.dataset.end  || '');
       const name = r.dataset.name || '';
       const isPast = end >= 0 && cur > end;
-      const matchesFilter = !filterQ || name.includes(filterQ);
+      const matchesFilter = !filterQ || name.includes(filterQ)
+                         || (r.dataset.cat  || '').includes(filterQ)
+                         || (r.dataset.club || '').includes(filterQ);
 
       r.classList.toggle('past', isPast);
       r.classList.toggle('past-hidden',   isPast && !showPast);
