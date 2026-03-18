@@ -19,9 +19,17 @@ from flask import (
 )
 
 from utils.parse_registrations import get_swiss_fighters
+from utils.parse_registrations_html import get_swiss_fighters_html
 from utils.parse_schedule import extract_schedule
 from utils.parse_draws import extract_draws, pool_for_fighter
 from utils import cache as _cache
+
+
+def _load_swiss_fighters(path: str) -> list[dict]:
+    """Dispatch to the correct parser based on file extension."""
+    if path.lower().endswith(('.html', '.htm')):
+        return get_swiss_fighters_html(path)
+    return get_swiss_fighters(path)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -30,19 +38,26 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 
 import re as _re
-_CAT_NUM_RE = _re.compile(r"\d{2}\s+([A-Z]{2})\s+(\d{3})", _re.IGNORECASE)
+# Matches any variant:
+#   normal:    '01 PF 034 OC M -37 KG'  -> ('pf', '034')
+#   openweight: '001 PF 0460 GC J M'    -> ('pf', '0460')
+# Strategy: anchor on the DISCIPLINE (exactly 2 uppercase letters between
+# two whitespace-separated groups of digits), then capture both surrounding
+# digit groups so the full category number is preserved.
+_CAT_NUM_RE = _re.compile(r"(\d+)\s+([A-Z]{2})\s+(\d+)", _re.IGNORECASE)
 
 
 def _cat_key(s: str):
     """
-    Extract the unique category key: (discipline_prefix, 3-digit-number).
-    E.g. '01 PF 034 OC M -37 KG'  ->  ('pf', '034')
-         '02 LC 109 OC F -55 kg'  ->  ('lc', '109')
+    Extract the unique category key: (discipline_prefix, category_number).
+    E.g. '01 PF 034 OC M -37 KG'   ->  ('pf', '034')
+         '02 LC 109 OC F -55 kg'   ->  ('lc', '109')
+         '001 PF 0460 GC J M'      ->  ('pf', '0460')
     Returns None if not parseable.
     """
     m = _CAT_NUM_RE.search(s)
     if m:
-        return (m.group(1).lower(), m.group(2))
+        return (m.group(2).lower(), m.group(3))
     return None
 
 
@@ -149,14 +164,20 @@ def debug():
         return "Upload both files", 400
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
-        reg_path = tmp / "registrations.pdf"
+        reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
+        reg_path = tmp / f"registrations{reg_ext}"
         sched_path = tmp / "schedule.pdf"
         reg_file.save(str(reg_path))
         sched_file.save(str(sched_path))
         from utils.parse_registrations import extract_fighters, get_swiss_fighters
         from utils.parse_schedule import extract_schedule
-        all_fighters = extract_fighters(str(reg_path))
-        swiss = get_swiss_fighters(str(reg_path))
+        # For debug, always try PDF extractor; HTML path still shows swiss fighters
+        ext = reg_path.suffix.lower()
+        if ext in ('.html', '.htm'):
+            all_fighters = get_swiss_fighters_html(str(reg_path))
+        else:
+            all_fighters = extract_fighters(str(reg_path))
+        swiss = _load_swiss_fighters(str(reg_path))
         schedule = extract_schedule(str(sched_path))
     result = {
         "registrations_total": len(all_fighters),
@@ -188,7 +209,8 @@ def process():
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp = pathlib.Path(tmp)
-            reg_path = tmp / "registrations.pdf"
+            reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
+            reg_path = tmp / f"registrations{reg_ext}"
             sched_path = tmp / "schedule.pdf"
             reg_file.save(str(reg_path))
             sched_file.save(str(sched_path))
@@ -200,7 +222,16 @@ def process():
                 draws_file.save(str(draws_path))
                 draws = extract_draws(str(draws_path))
 
-            swiss_fighters = get_swiss_fighters(str(reg_path))
+            swiss_fighters = _load_swiss_fighters(str(reg_path))
+
+            # Optional club filter
+            club_filter = request.form.get('club_filter', '').strip()
+            if club_filter:
+                cf_lower = club_filter.lower()
+                swiss_fighters = [
+                    f for f in swiss_fighters
+                    if cf_lower in f.get('club', '').lower()
+                ]
             schedule = extract_schedule(str(sched_path))
             rows = _match(swiss_fighters, schedule, draws)
 
@@ -217,6 +248,7 @@ def process():
             fighter_list=swiss_fighters,
             swiss_count=len(swiss_fighters),
             draws_used=bool(draws),
+            club_filter=club_filter,
         )
         # -----------------------------------------------------------------------
 
@@ -230,6 +262,7 @@ def process():
             schedule_count=len(schedule),
             cache_name=cache_name,
             cache_slug=slug,
+            club_filter=club_filter,
         )
 
     except Exception:
@@ -252,6 +285,7 @@ def load_cache(slug):
         cache_name=entry["name"],
         cache_slug=slug,
         cache_created=entry.get("created", ""),
+        club_filter=entry.get("club_filter", ""),
     )
 
 

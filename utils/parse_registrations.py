@@ -14,6 +14,11 @@ _SEP = '\uf007'
 # Country abbreviation in parentheses, e.g. (SUI) (AUT) (GER)
 _COUNTRY_ABBR_RE = re.compile(r'\(([A-Z]{2,3})\)')
 
+# WAKO club-code anchors  –  (WAKOSUI) or (WAKOSUI-ABC)
+_WAKO_CODE_RE      = re.compile(r'\(WAKOSUI(?:-[A-Z]{3})?\)')
+# Incomplete WAKO code anywhere in the string (no closing ')' for the WAKOSUI group)
+_WAKO_PARTIAL_RE   = re.compile(r'\(WAKOSUI(?:-[A-Z]{0,3})?(?![^)]*\))')
+
 # Skip lines that are page metadata
 _SKIP_RE = re.compile(
     r'https?://|SET-ONLINE|UBERSICHT|NENNUNGEN GESAMT|TOTAL ATHLETES'
@@ -112,26 +117,11 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
         if swiss_only and country not in SWISS_ABBREVS:
             continue
 
-        # --- extract name: rightmost uppercase words before the icon ---
-        name = _extract_name(before)
-
-        # --- fallback: name is split across adjacent lines ---
-        # Small Switzerland-only PDF layout:
-        #   prev_line: CLUB(CODE- LASTNAME
-        #   sep_line:  \uf007 CATEGORY   (or CLUB(CODE) \uf007 CATEGORY)
-        #   next_line: CODE) FIRSTNAME
-        if not name:
-            prev_line = lines[i - 1] if i > 0 else ''
-            next_line = lines[i + 1] if i + 1 < n else ''
-            prev_tokens = _caps_tail(prev_line)
-            next_tokens = _caps_after_paren(next_line)
-            name = ' '.join(prev_tokens + next_tokens)
+        # --- Use WAKO club-code as anchor to split club / name ---
+        club, name = _extract_club_and_name(lines, i, before)
 
         if not name:
             continue
-
-        # --- clean up club ---
-        club = _extract_club(before, name)
 
         # Normalise category code to lowercase to match schedule codes
         category_code = category_raw.strip().rstrip('.')
@@ -148,6 +138,189 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
 
 
 _ALL_CAPS_WORD_RE = re.compile(r"^[A-ZÄÖÜ][A-ZÄÖÜ\-\']+$")
+
+
+# ---------------------------------------------------------------------------
+# WAKO-code-anchored club / name extraction
+# ---------------------------------------------------------------------------
+
+_COUNTRY_NAMES_UPPER = {
+    'SWITZERLAND', 'SCHWEIZ', 'SUISSE', 'SVIZZERA',
+    'AUSTRIA', 'GERMANY', 'FRANCE', 'ITALY', 'HUNGARY',
+    'SLOVAKIA', 'CZECH', 'POLAND', 'SPAIN', 'CROATIA',
+    'SERBIA', 'ROMANIA', 'BULGARIA', 'UKRAINE',
+}
+
+
+def _prev_club_text(line: str) -> str:
+    """Return `line` if it looks like club-name continuation text.
+    Returns '' if the line is a separator line, a skip line, or a
+    country-declaration line (we don't want to swallow those).
+    """
+    if not line or _SEP in line or _SKIP_RE.search(line):
+        return ''
+    # A bare country marker line (e.g. "SWITZERLAND (SUI)") is not club text.
+    # Strip the country abbreviation(s) and see what remains.
+    stripped = _COUNTRY_ABBR_RE.sub('', line).strip()
+    if not stripped:
+        return ''
+    # If what remains is just a known country name, skip it.
+    if stripped.upper() in SWISS_NAMES | {
+        'SWITZERLAND', 'AUSTRIA', 'GERMANY', 'FRANCE', 'ITALY', 'HUNGARY',
+        'SLOVAKIA', 'CZECH', 'POLAND', 'SPAIN', 'CROATIA', 'SERBIA',
+        'ROMANIA', 'BULGARIA', 'UKRAINE',
+    }:
+        return ''
+    return line
+
+
+def _name_after_country_noise(s: str) -> str:
+    """Like _name_from_raw but skips leading country names/abbreviations first,
+    then collects the first run of all-caps name tokens.
+    Used to recover first names hidden after 'SWITZERLAND (SUI)' on a line.
+    """
+    cleaned = _COUNTRY_ABBR_RE.sub('', s).strip()
+    tokens = []
+    past_country = False
+    for tok in cleaned.split():
+        tok_clean = tok.rstrip(',-;')
+        if tok_clean.upper() in _COUNTRY_NAMES_UPPER:
+            past_country = True
+            continue
+        if past_country and _ALL_CAPS_WORD_RE.match(tok_clean) and len(tok_clean) > 1:
+            tokens.append(tok_clean)
+        elif tokens:
+            break
+    return ' '.join(tokens)
+
+
+def _name_from_raw(raw: str) -> str:
+    """Extract fighter name = contiguous run of ALL-CAPS words, ignoring
+    country abbreviations and country names that may follow the WAKO code."""
+    cleaned = _COUNTRY_ABBR_RE.sub('', raw).strip()
+    tokens = []
+    for tok in cleaned.split():
+        tok_clean = tok.rstrip(',-;')
+        if tok_clean.upper() in _COUNTRY_NAMES_UPPER:
+            break   # stop at country name (e.g. SWITZERLAND after the code)
+        if _ALL_CAPS_WORD_RE.match(tok_clean) and len(tok_clean) > 1:
+            tokens.append(tok_clean)
+        elif tokens:
+            break   # stop at first non-caps token after we've started collecting
+    return ' '.join(tokens)
+
+
+def _extract_club_and_name(lines: list, i: int, before: str) -> tuple[str, str]:
+    """Use the WAKO club code as an anchor to cleanly separate club and name.
+
+    Three layout variants observed in the PDF:
+
+    A) Code + name on the same "before" line:
+         before = 'WOHLEN(WAKOSUI-AAA) PACE SILVIO'
+       → club = prev_club_text + 'WOHLEN(WAKOSUI-AAA)', name = 'PACE SILVIO'
+
+    B) Code is split across before / next line:
+         before = 'NIPPON BERN(WAKOSUI- GASSER ISABEL'
+         next   = 'AAS), SWITZERLAND (SUI)'
+       → reassemble, then split at code end
+
+    C) before is empty; code+name are on next line (fully split layout):
+         before = ''
+         next   = 'ACADEMY(WAKOSUI-ADB), CRESCINI FRANK'
+       → club from next up to code, name from next after code
+       (or split-name: lastname in prev, firstname in next-next)
+    """
+    n = len(lines)
+    prev1 = lines[i - 1].strip() if i > 0 else ''
+    prev2 = lines[i - 2].strip() if i > 1 else ''
+    next1 = lines[i + 1].strip() if i + 1 < n else ''
+
+    # ------------------------------------------------------------------ A
+    m = _WAKO_CODE_RE.search(before)
+    if m:
+        club_tail = before[:m.end()].strip().rstrip(',').strip()
+        name_raw  = before[m.end():].strip().lstrip(',').strip()
+        if name_raw:
+            # Name follows the code on the same line; prev1 (if not sep) = club prefix
+            p1 = _prev_club_text(prev1)
+            parts = [x for x in [p1, club_tail] if x]
+            club = ' '.join(parts)
+            name = _name_from_raw(name_raw)
+            # If only one word recovered, the first name may be on the next line
+            # (e.g. next1 = 'SWITZERLAND (SUI) MIDAS')
+            if name and ' ' not in name:
+                extra = _name_after_country_noise(next1)
+                if extra:
+                    name = name + ' ' + extra
+            return club, name
+        else:
+            # Name is split: last name in prev, first name in next
+            club = club_tail
+            name = ' '.join(_caps_tail(prev1) + _caps_after_paren(next1))
+            return club, name
+
+    # ------------------------------------------------------------------ B
+    # Partial WAKO code in before (no closing ')') — split across lines,
+    # possibly with fighter-name text interleaved between the partial code
+    # and the line break.
+    m_partial = _WAKO_PARTIAL_RE.search(before)
+    if m_partial:
+        # Check if next line starts with the code completion: e.g. "AAS),"
+        m_close = re.match(r'([A-Z]{0,3}\))', next1)
+        if m_close:
+            # Reconstruct the complete code from the two pieces
+            complete_code = before[m_partial.start():m_partial.end()] + m_close.group(1)
+            # Text between the partial code and EOL in before = interleaved name
+            name_fragment_before = before[m_partial.end():].strip()
+            # Text after the closing on next line = further name / country info
+            name_fragment_next = next1[m_close.end():].strip().lstrip(',').strip()
+            name_raw = (name_fragment_before + ' ' + name_fragment_next).strip()
+            name = _name_from_raw(name_raw)
+            club_tail = (before[:m_partial.start()] + complete_code).strip().rstrip(',').strip()
+            p1 = _prev_club_text(prev1)
+            parts = [x for x in [p1, club_tail] if x]
+            club = ' '.join(parts)
+            return club, name
+        # Simpler split: no interleaving, just complete the code via concatenation
+        combined = (before + next1).strip()
+        m = _WAKO_CODE_RE.search(combined)
+        if m:
+            club_tail = combined[:m.end()].strip().rstrip(',').strip()
+            name_raw  = combined[m.end():].strip().lstrip(',').strip()
+            name = _name_from_raw(name_raw)
+            p1 = _prev_club_text(prev1)
+            parts = [x for x in [p1, club_tail] if x]
+            club = ' '.join(parts)
+            return club, name
+
+    # ------------------------------------------------------------------ C
+    if not before:
+        m = _WAKO_CODE_RE.search(next1)
+        if m:
+            club_tail = next1[:m.end()].strip().rstrip(',').strip()
+            name_raw  = next1[m.end():].strip().lstrip(',').strip()
+            if name_raw:
+                name = _name_from_raw(name_raw)
+                # If name only got a fragment (e.g. just last name), try extending from next2
+                if name and ' ' not in name:
+                    next2 = lines[i + 2].strip() if i + 2 < n else ''
+                    extra = _name_from_raw(_COUNTRY_ABBR_RE.sub('', next2).strip())
+                    if extra:
+                        name = name + ' ' + extra
+                p1 = _prev_club_text(prev1)
+                parts = [x for x in [p1, club_tail] if x]
+                club = ' '.join(parts)
+                return club, name
+            else:
+                # Fully split: lastname in prev1, firstname in lines[i+2]
+                next2 = lines[i + 2].strip() if i + 2 < n else ''
+                name = ' '.join(_caps_tail(prev1) + _caps_after_paren(next2))
+                return club_tail, name
+
+    # ------------------------------------------------------------------ fallback
+    name = _extract_name(before)
+    club = _extract_club(before, name) if name else ''
+    return club, name
 
 # Single-word place/country names that appear before the fighter name
 _SKIP_WORDS = {

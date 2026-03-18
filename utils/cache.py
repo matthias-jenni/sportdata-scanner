@@ -88,6 +88,7 @@ def save(
     fighter_list: list[dict],
     swiss_count: int,
     draws_used: bool,
+    club_filter: str = "",
 ) -> str:
     """Persist a result set. Returns the slug. Overwrites existing same-slug entry."""
     slug = _slugify(name)
@@ -97,6 +98,7 @@ def save(
         "created":      datetime.now().isoformat(timespec="seconds"),
         "swiss_count":  swiss_count,
         "draws_used":   draws_used,
+        "club_filter":  club_filter,
         "rows":         rows,
         "fighter_list": fighter_list,
     }

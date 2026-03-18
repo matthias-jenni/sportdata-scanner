@@ -208,6 +208,7 @@
   <h1>🇨🇭 Swiss Fighter Timetable</h1>
   <p>{{ swiss_count }} Swiss fighter{% if swiss_count != 1 %}s{% endif %} registered
   · {{ rows|length }} fight slot{% if rows|length != 1 %}s{% endif %} found
+  {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🏠 {{ club_filter }}</span>{% endif %}
   {% if draws_used %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🎲 draws applied</span>{% endif %}
   {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">💾 {{ cache_name }}</span>{% endif %}</p>
   {% if schedule_count is defined and schedule_count %}

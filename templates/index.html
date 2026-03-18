@@ -58,16 +58,16 @@
       <form method="post" action="/process" enctype="multipart/form-data">
 
         <div class="mb-4">
-          <label for="registrations" class="form-label">📋 Registrations PDF</label>
+          <label for="registrations" class="form-label">📋 Registrations <span class="text-muted fw-normal">PDF or HTML</span></label>
           <input
             type="file"
             class="form-control"
             id="registrations"
             name="registrations"
-            accept=".pdf"
+            accept=".pdf,.html,.htm"
             required
           />
-          <div class="form-text">The full list of all registered fighters (all nations).</div>
+          <div class="form-text">PDF upload, <strong>or</strong> save the sportdata registrations page in your browser (<em>File → Save Page As</em>) and upload the <code>.html</code> file.</div>
         </div>
 
         <div class="mb-4">
@@ -96,6 +96,19 @@
         </div>
 
         <div class="mb-4">
+          <label for="club_filter" class="form-label">🏠 Filter by club <span class="badge bg-secondary" style="font-size:.7rem;vertical-align:middle">optional</span></label>
+          <input
+            type="text"
+            class="form-control"
+            id="club_filter"
+            name="club_filter"
+            placeholder="e.g. nippon"
+            maxlength="80"
+          />
+          <div class="form-text">Show only fighters from a specific club. Partial name, case-insensitive. Leave empty for all Swiss fighters.</div>
+        </div>
+
+        <div class="mb-4">
           <label for="cache_name" class="form-label">💾 Save as <span class="badge bg-secondary" style="font-size:.7rem;vertical-align:middle">optional</span></label>
           <input
             type="text"
@@ -113,7 +126,7 @@
         </button>
         <div id="loading" class="text-center mt-3" style="display:none">
           <div class="spinner-border text-danger" role="status"></div>
-          <p class="text-muted small mt-2 mb-0">Parsing PDFs… this can take up to a minute.</p>
+          <p class="text-muted small mt-2 mb-0">Parsing files… this can take up to a minute.</p>
         </div>
       </form>
 
@@ -122,7 +135,7 @@
       <form method="post" action="/debug" enctype="multipart/form-data" class="text-center">
         <div class="mb-3">
           <label class="form-label fw-semibold text-muted small">Debug: inspect raw parser output</label>
-          <input type="file" class="form-control form-control-sm mb-2" name="registrations" accept=".pdf" required />
+          <input type="file" class="form-control form-control-sm mb-2" name="registrations" accept=".pdf,.html,.htm" required />
           <input type="file" class="form-control form-control-sm mb-2" name="schedule" accept=".pdf" required />
           <button type="submit" class="btn btn-outline-secondary btn-sm w-100">🔍 Show raw parsed data (JSON)</button>
         </div>

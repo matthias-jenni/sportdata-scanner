@@ -2,3 +2,5 @@ flask>=3.0
 pdfplumber>=0.11
 gunicorn>=21
 supabase>=2.0
+requests>=2.31
+beautifulsoup4>=4.12
