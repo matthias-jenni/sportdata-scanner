@@ -4,6 +4,222 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Swiss Fighter Timetable</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous" />
+  <style>
+    body { background: #f4f6f9; }
+    .hero {
+      background: linear-gradient(135deg, #d00 0%, #a00 100%);
+      color: #fff;
+      padding: 2.2rem 1rem 1.8rem;
+      text-align: center;
+      border-radius: 0 0 1.5rem 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .hero h1 { font-size: clamp(1.4rem, 5vw, 2.1rem); font-weight: 700; margin-bottom: .25rem; }
+    .hero p  { opacity: .85; font-size: .9rem; margin: 0; }
+    .card-upload {
+      max-width: 540px;
+      margin: 0 auto 2rem;
+      border: none;
+      border-radius: 1rem;
+      box-shadow: 0 4px 18px rgba(0,0,0,.1);
+    }
+    label.form-label { font-weight: 600; }
+    .btn-primary { background: #d00; border-color: #d00; }
+    .btn-primary:hover { background: #a00; border-color: #a00; }
+
+    /* Tabs */
+    .nav-tabs .nav-link          { color: #555; font-weight: 500; }
+    .nav-tabs .nav-link.active   { color: #d00; font-weight: 700; border-bottom-color: #fff; }
+    .nav-tabs .nav-link:hover    { color: #a00; }
+    .tab-section { display: none; }
+    .tab-section.active { display: block; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div style="font-size:2.2rem">🇨🇭</div>
+  <h1>Swiss Fighter Timetable</h1>
+  <p>Upload registrations and a schedule to generate your Swiss fighter overview.</p>
+</div>
+
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ 'danger' if category == 'error' else ('success' if category == 'success' else 'warning') }} alert-dismissible fade show" role="alert">
+        <pre class="mb-0" style="white-space:pre-wrap;font-size:.8rem;">{{ message }}</pre>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="card card-upload">
+    <div class="card-body p-4">
+
+      <form method="post" action="/process" enctype="multipart/form-data" id="main-form">
+
+        {# ---- COMMON FIELDS ---- #}
+        <div class="mb-3">
+          <label for="registrations" class="form-label">📋 Registrations <span class="text-muted fw-normal small">PDF or HTML</span></label>
+          <input type="file" class="form-control" id="registrations" name="registrations"
+                 accept=".pdf,.html,.htm" required />
+          <div class="form-text">PDF, <strong>or</strong> use <em>File → Save Page As</em> in your browser and upload the <code>.html</code> file.</div>
+        </div>
+
+        <div class="mb-3">
+          <label for="club_filter" class="form-label">🏠 Filter by club <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
+          <input type="text" class="form-control" id="club_filter" name="club_filter"
+                 placeholder="e.g. nippon" maxlength="80" />
+          <div class="form-text">Partial name, case-insensitive. Leave empty for all Swiss fighters.</div>
+        </div>
+
+        <div class="mb-3">
+          <label for="cache_name" class="form-label">💾 Save as <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
+          <input type="text" class="form-control" id="cache_name" name="cache_name"
+                 placeholder="{{ default_name }}" maxlength="80" />
+          <div class="form-text">Name for the saved result. Defaults to today's date.</div>
+        </div>
+
+        <hr class="my-3" />
+
+        {# ---- TABS ---- #}
+        <ul class="nav nav-tabs mb-3" id="mode-tabs">
+          <li class="nav-item">
+            <button type="button" class="nav-link active" data-tab="schedule">🗓️ Category Schedule</button>
+          </li>
+          <li class="nav-item">
+            <button type="button" class="nav-link" data-tab="ringcards">🥊 Fight Cards</button>
+          </li>
+        </ul>
+
+        {# ---- TAB: Category Schedule ---- #}
+        <div class="tab-section active" id="tab-schedule">
+
+          <div class="mb-3">
+            <label for="schedule" class="form-label">🗓️ Category Schedule PDF</label>
+            <input type="file" class="form-control" id="schedule" name="schedule" accept=".pdf" />
+            <div class="form-text">The official schedule with time, tatami and categories.</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="draws" class="form-label">🎲 Draws PDF <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
+            <input type="file" class="form-control" id="draws" name="draws" accept=".pdf" />
+            <div class="form-text">Pool assignments per category — each fighter is shown only for their specific pool slot.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fs-5" id="submit-btn">
+            Generate Timetable →
+          </button>
+        </div>
+
+        {# ---- TAB: Fight Cards ---- #}
+        <div class="tab-section" id="tab-ringcards">
+
+          <div class="mb-3">
+            <label for="ring_schedule" class="form-label">🥊 Fight-Card Schedule PDF</label>
+            <input type="file" class="form-control" id="ring_schedule" name="ring_schedule" accept=".pdf" />
+            <div class="form-text">Fight-card schedule PDF with named fighters per fight.</div>
+          </div>
+
+          <button type="submit" class="btn btn-dark w-100 py-2 fs-5" id="submit-btn-ring">
+            Generate Fight Cards →
+          </button>
+        </div>
+
+        <div id="loading" class="text-center mt-3" style="display:none">
+          <div class="spinner-border text-danger" role="status"></div>
+          <p class="text-muted small mt-2 mb-0">Parsing files… this can take up to a minute.</p>
+        </div>
+
+      </form>
+
+      <hr class="my-3"/>
+      <form method="post" action="/debug" enctype="multipart/form-data" class="text-center">
+        <div class="mb-0">
+          <label class="form-label fw-semibold text-muted small">🔍 Debug: inspect raw parser output</label>
+          <input type="file" class="form-control form-control-sm mb-2" name="registrations" accept=".pdf,.html,.htm" required />
+          <input type="file" class="form-control form-control-sm mb-2" name="schedule" accept=".pdf" required />
+          <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Show raw parsed data (JSON)</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <p class="text-center text-muted small mb-4">
+    Only Swiss fighters (SUI / Switzerland) are shown in the result.
+  </p>
+
+  {% if caches %}
+  <div style="max-width:540px;margin:0 auto 2.5rem">
+    <h6 class="text-muted mb-2">💾 Saved results</h6>
+    <div class="list-group shadow-sm">
+      {% for c in caches %}
+      <div class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3">
+        {% if c.type == 'ring-cards' %}
+        <a href="/ring-cache/{{ c.slug }}" class="flex-grow-1 text-decoration-none text-dark">
+        {% else %}
+        <a href="/cache/{{ c.slug }}" class="flex-grow-1 text-decoration-none text-dark">
+        {% endif %}
+          <span class="fw-semibold">{% if c.type == 'ring-cards' %}🥊{% else %}🗓️{% endif %} {{ c.name }}</span>
+          <span class="text-muted small ms-2">{{ c.row_count }} {% if c.type == 'ring-cards' %}fight{% else %}slot{% endif %}{% if c.row_count != 1 %}s{% endif %}
+            · {{ c.swiss_count }} fighter{% if c.swiss_count != 1 %}s{% endif %}
+            {% if c.draws_used %}<span class="badge bg-secondary ms-1" style="font-size:.65rem">draws</span>{% endif %}
+            {% if c.club_filter %}<span class="badge bg-secondary ms-1" style="font-size:.65rem">🏠 {{ c.club_filter }}</span>{% endif %}
+          </span><br>
+          <span class="text-muted" style="font-size:.75rem">{{ c.created }}</span>
+        </a>
+        <form method="post" action="/cache/{{ c.slug }}/delete" class="mb-0"
+              onsubmit="return confirm('Delete saved result &quot;{{ c.name }}&quot;?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Delete">✕</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script>
+  const form      = document.getElementById('main-form');
+  const tabs      = document.querySelectorAll('#mode-tabs .nav-link');
+  const sections  = document.querySelectorAll('.tab-section');
+  const schedInput  = document.getElementById('schedule');
+  const ringInput   = document.getElementById('ring_schedule');
+
+  const ACTIONS = {
+    schedule:  '/process',
+    ringcards: '/ring-cards',
+  };
+
+  function switchTab(tab) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    sections.forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
+    form.action = ACTIONS[tab];
+
+    // Manage required so inactive tab never blocks submission
+    schedInput.required = (tab === 'schedule');
+    ringInput.required  = (tab === 'ringcards');
+  }
+
+  tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+  // Initialise
+  switchTab('schedule');
+
+  // Loading spinner on submit
+  form.addEventListener('submit', function() {
+    const activeBtn = document.querySelector('.tab-section.active button[type=submit]');
+    if (activeBtn) { activeBtn.disabled = true; activeBtn.textContent = 'Parsing…'; }
+    document.getElementById('loading').style.display = 'block';
+  });
+</script>
+</body>
+</html>
+
   <link
     rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -132,6 +348,34 @@
 
       <hr class="my-3"/>
 
+      {# ---- Ring Fight Cards ---- #}
+      <form method="post" action="/ring-cards" enctype="multipart/form-data">
+        <p class="fw-semibold mb-2 text-muted small text-uppercase" style="letter-spacing:.05em">🥊 Fight Cards (ring schedule)</p>
+
+        <div class="mb-2">
+          <input type="file" class="form-control form-control-sm" name="registrations"
+                 accept=".pdf,.html,.htm" required
+                 placeholder="Registrations (PDF or HTML)" />
+          <div class="form-text">Registrations PDF or saved HTML page</div>
+        </div>
+        <div class="mb-2">
+          <input type="file" class="form-control form-control-sm" name="ring_schedule"
+                 accept=".pdf" required />
+          <div class="form-text">Ring-schedule PDF (with named fighters per fight)</div>
+        </div>
+        <div class="mb-2">
+          <input type="text" class="form-control form-control-sm" name="club_filter"
+                 placeholder="Filter by club (optional, e.g. nippon)" maxlength="80" />
+        </div>
+        <div class="mb-2">
+          <input type="text" class="form-control form-control-sm" name="cache_name"
+                 placeholder="Save as… (defaults to today's date)" maxlength="80" />
+        </div>
+        <button type="submit" class="btn btn-dark btn-sm w-100">🥊 Generate Fight Cards</button>
+      </form>
+
+      <hr class="my-3"/>
+
       <form method="post" action="/debug" enctype="multipart/form-data" class="text-center">
         <div class="mb-3">
           <label class="form-label fw-semibold text-muted small">Debug: inspect raw parser output</label>
@@ -153,11 +397,16 @@
     <div class="list-group shadow-sm">
       {% for c in caches %}
       <div class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3">
+        {% if c.type == 'ring-cards' %}
+        <a href="/ring-cache/{{ c.slug }}" class="flex-grow-1 text-decoration-none text-dark">
+        {% else %}
         <a href="/cache/{{ c.slug }}" class="flex-grow-1 text-decoration-none text-dark">
-          <span class="fw-semibold">{{ c.name }}</span>
-          <span class="text-muted small ms-2">{{ c.row_count }} slot{% if c.row_count != 1 %}s{% endif %}
+        {% endif %}
+          <span class="fw-semibold">{% if c.type == 'ring-cards' %}🥊{% else %}🗓️{% endif %} {{ c.name }}</span>
+          <span class="text-muted small ms-2">{{ c.row_count }} {% if c.type == 'ring-cards' %}fight{% else %}slot{% endif %}{% if c.row_count != 1 %}s{% endif %}
             · {{ c.swiss_count }} fighter{% if c.swiss_count != 1 %}s{% endif %}
             {% if c.draws_used %}<span class="badge bg-secondary ms-1" style="font-size:.65rem">draws</span>{% endif %}
+            {% if c.club_filter %}<span class="badge bg-secondary ms-1" style="font-size:.65rem">🏠 {{ c.club_filter }}</span>{% endif %}
           </span><br>
           <span class="text-muted" style="font-size:.75rem">{{ c.created }}</span>
         </a>

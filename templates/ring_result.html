@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fight Cards</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous" />
+  <style>
+    body { background: #f0f2f5; font-family: system-ui, sans-serif; }
+
+    .hero {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      padding: 1.8rem 1rem 1.5rem;
+      text-align: center;
+      border-radius: 0 0 1.5rem 1.5rem;
+      margin-bottom: 1.2rem;
+    }
+    .hero h1 { font-size: clamp(1.2rem, 5vw, 1.9rem); font-weight: 700; margin-bottom: .3rem; }
+    .hero p  { opacity: .8; font-size: .9rem; margin: 0; }
+
+    /* ---- Collapsed row (always visible) ---- */
+    .fight-card {
+      background: #fff;
+      border-radius: .75rem;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+      margin-bottom: .5rem;
+      overflow: hidden;
+    }
+
+    .card-summary {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .55rem .85rem;
+      cursor: pointer;
+      user-select: none;
+      flex-wrap: wrap;
+    }
+    .card-summary:hover { background: #fafafa; }
+
+    /* Swiss name pill */
+    .our-name {
+      font-weight: 700;
+      font-size: .95rem;
+      padding: .15rem .5rem;
+      border-radius: .35rem;
+    }
+    .our-name-red  { color: #b00;    background: #fff0f0; border: 1px solid #f5c6c6; }
+    .our-name-blue { color: #1a56db; background: #f0f4ff; border: 1px solid #c3d2f5; }
+    .our-name-both { color: #555;    background: #fffbe6; border: 1px solid #ffe082; }
+
+    .meta-badges {
+      display: flex;
+      gap: .35rem;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: .78rem;
+      color: #555;
+    }
+    .meta-badges .badge-ring  { background: #e8eaf0; color: #333; border-radius: .3rem; padding: .1rem .4rem; font-weight: 600; }
+    .meta-badges .badge-time  { background: #e8f5e9; color: #2e7d32; border-radius: .3rem; padding: .1rem .4rem; font-weight: 600; }
+    .meta-badges .badge-time-est { background: #fff8e1; color: #f57f17; border-radius: .3rem; padding: .1rem .4rem; }
+    .meta-badges .badge-fight { color: #888; }
+    .meta-badges .badge-cat   { color: #777; font-size: .74rem; }
+
+    .chevron {
+      margin-left: auto;
+      font-size: .75rem;
+      color: #aaa;
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .fight-card.open .chevron { transform: rotate(180deg); }
+
+    /* ---- Expanded details ---- */
+    .card-details {
+      display: none;
+      border-top: 1px solid #eef;
+    }
+    .fight-card.open .card-details { display: block; }
+
+    .corners {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 480px) {
+      .corners { grid-template-columns: 1fr; }
+    }
+
+    .corner { padding: .65rem .85rem; }
+    .corner-red  { background: #fff5f5; border-right: 1px solid #f0dede; }
+    .corner-blue { background: #f5f8ff; }
+
+    .corner-label {
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      margin-bottom: .15rem;
+      opacity: .5;
+    }
+    .corner-red  .corner-label { color: #c00; }
+    .corner-blue .corner-label { color: #1a56db; }
+
+    .fighter-name {
+      font-size: .93rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .corner-red  .fighter-name { color: #b00; }
+    .corner-blue .fighter-name { color: #1a56db; }
+    .fighter-club    { font-size: .76rem; color: #555; margin-top: .12rem; }
+    .fighter-country { font-size: .7rem;  color: #888; }
+
+    .our-fighter { background: rgba(255,215,0,.13) !important; }
+    .our-fighter .fighter-name::after { content: ' 🇨🇭'; font-size: .8em; }
+
+    /* Search */
+    .search-bar input {
+      width: 100%;
+      padding: .5rem .85rem;
+      border: 1.5px solid #dde;
+      border-radius: .6rem;
+      font-size: .9rem;
+      margin-bottom: .8rem;
+      outline: none;
+    }
+    .search-bar input:focus { border-color: #667eea; }
+
+    .no-results { text-align: center; color: #888; padding: 2rem 0; }
+
+    @media print {
+      .hero, .back-btn, .search-bar, .chevron { display: none; }
+      .card-details { display: block !important; }
+      .fight-card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; margin-bottom: .5cm; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>🥊 Fight Cards</h1>
+  <p>
+    {{ cards|length }} fight{% if cards|length != 1 %}s{% endif %} found
+    &nbsp;·&nbsp; {{ swiss_count }} Swiss fighter{% if swiss_count != 1 %}s{% endif %} registered
+    {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">🏠 {{ club_filter }}</span>{% endif %}
+    {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">💾 {{ cache_name }}</span>{% endif %}
+    &nbsp;·&nbsp; <span style="opacity:.6;font-size:.82em">{{ total_fights }} total ring fights</span>
+  </p>
+</div>
+
+<div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
+  <a href="/" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
+  <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">🖨 Print</button>
+  <button onclick="expandAll()" class="btn btn-outline-secondary btn-sm">⬇ Expand all</button>
+  <button onclick="collapseAll()" class="btn btn-outline-secondary btn-sm">⬆ Collapse all</button>
+</div>
+
+<div class="container-fluid px-3">
+
+  {% if cards %}
+
+  <div class="search-bar">
+    <input type="search" id="card-filter" placeholder="🔍 Filter by name, ring or category…" autocomplete="off" />
+  </div>
+
+  <div id="cards-container">
+  {% for c in cards %}
+
+  {# Determine which name(s) to show in the summary row #}
+  {% if c.our_color == 'red' %}
+    {% set our_name = c.fighter1.name %}
+    {% set our_class = 'our-name-red' %}
+  {% elif c.our_color == 'blue' %}
+    {% set our_name = c.fighter2.name %}
+    {% set our_class = 'our-name-blue' %}
+  {% else %}
+    {% set our_name = c.fighter1.name ~ ' & ' ~ c.fighter2.name %}
+    {% set our_class = 'our-name-both' %}
+  {% endif %}
+
+  <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
+
+    {# ---- Collapsed summary row ---- #}
+    <div class="card-summary" onclick="toggleCard(this.closest('.fight-card'))">
+      <span class="our-name {{ our_class }}">{{ our_name }}</span>
+      <div class="meta-badges">
+        <span class="badge-ring">{{ c.ring }}</span>
+        {% if c.time %}
+          {% if c.time_estimated %}
+            <span class="badge-time-est">~{{ c.time }}</span>
+          {% else %}
+            <span class="badge-time">{{ c.time }}</span>
+          {% endif %}
+        {% endif %}
+        {% if c.fight_no %}<span class="badge-fight">#{{ c.fight_no }}</span>{% endif %}
+        <span class="badge-cat">{{ c.category_code }}</span>
+      </div>
+      <span class="chevron">▼</span>
+    </div>
+
+    {# ---- Expanded details ---- #}
+    <div class="card-details">
+      <div class="corners">
+
+        <div class="corner corner-red{% if c.our_color in ('red','both') %} our-fighter{% endif %}">
+          <div class="corner-label">🔴 Red Corner</div>
+          <div class="fighter-name">{{ c.fighter1.name }}</div>
+          {% if c.fighter1.club %}<div class="fighter-club">{{ c.fighter1.club }}</div>{% endif %}
+          {% if c.fighter1.country %}<div class="fighter-country">{{ c.fighter1.country }}</div>{% endif %}
+        </div>
+
+        <div class="corner corner-blue{% if c.our_color in ('blue','both') %} our-fighter{% endif %}">
+          <div class="corner-label">🔵 Blue Corner</div>
+          <div class="fighter-name">{{ c.fighter2.name }}</div>
+          {% if c.fighter2.club %}<div class="fighter-club">{{ c.fighter2.club }}</div>{% endif %}
+          {% if c.fighter2.country %}<div class="fighter-country">{{ c.fighter2.country }}</div>{% endif %}
+        </div>
+
+      </div>
+      {% if c.phase or c.time_end %}
+      <div style="padding:.3rem .85rem;background:#f7f8fa;font-size:.74rem;color:#777;border-top:1px solid #eee">
+        {% if c.phase %}{{ c.phase }}{% endif %}
+        {% if c.time and c.time_end %}&nbsp;·&nbsp; {{ c.time }} – {{ c.time_end }}{% if c.time_estimated %} (est.){% endif %}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+  {% endfor %}
+  </div>
+
+  <div class="no-results" id="no-results" style="display:none">No matching fight cards.</div>
+
+  {% else %}
+  <div class="no-results">
+    <p>No fight cards found for the selected fighters.</p>
+    <p class="small text-muted">Make sure the registrations and ring-schedule files are from the same event.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+  function toggleCard(card) {
+    card.classList.toggle('open');
+  }
+  function expandAll() {
+    document.querySelectorAll('.fight-card:not([style*="display: none"])').forEach(c => c.classList.add('open'));
+  }
+  function collapseAll() {
+    document.querySelectorAll('.fight-card').forEach(c => c.classList.remove('open'));
+  }
+
+  const input = document.getElementById('card-filter');
+  if (input) {
+    input.addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      const cards = document.querySelectorAll('.fight-card');
+      let visible = 0;
+      cards.forEach(c => {
+        const match = !q || c.dataset.search.toLowerCase().includes(q);
+        c.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+      document.getElementById('no-results').style.display = visible === 0 ? '' : 'none';
+    });
+  }
+</script>
+</body>
+</html>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous" />
+  <style>
+    body { background: #f0f2f5; font-family: system-ui, sans-serif; }
+
+    .hero {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      padding: 1.8rem 1rem 1.5rem;
+      text-align: center;
+      border-radius: 0 0 1.5rem 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 { font-size: clamp(1.2rem, 5vw, 1.9rem); font-weight: 700; margin-bottom: .3rem; }
+    .hero p  { opacity: .8; font-size: .9rem; margin: 0; }
+
+    /* ---- Fight Card ---- */
+    .fight-card {
+      background: #fff;
+      border-radius: .9rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,.09);
+      overflow: hidden;
+      margin-bottom: 1.1rem;
+    }
+
+    /* Card header bar */
+    .fight-header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: .45rem .8rem;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      flex-wrap: wrap;
+      font-size: .82rem;
+    }
+    .fight-header .ring-badge {
+      background: rgba(255,255,255,.18);
+      border-radius: .3rem;
+      padding: .1rem .45rem;
+      font-weight: 700;
+      font-size: .8rem;
+    }
+    .fight-header .time-badge {
+      font-weight: 600;
+      font-size: .93rem;
+    }
+    .fight-header .time-est {
+      opacity: .7;
+      font-size: .75rem;
+    }
+    .fight-header .fight-no {
+      margin-left: auto;
+      opacity: .65;
+      font-size: .78rem;
+    }
+    .fight-header .cat-code {
+      width: 100%;
+      font-size: .78rem;
+      opacity: .75;
+      margin-top: .1rem;
+    }
+
+    /* Two corners */
+    .corners {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 480px) {
+      .corners { grid-template-columns: 1fr; }
+    }
+
+    .corner {
+      padding: .7rem .85rem;
+      position: relative;
+    }
+    .corner-red  { background: #fff5f5; border-right: 1px solid #f0dede; }
+    .corner-blue { background: #f5f8ff; }
+
+    .corner-label {
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: .2rem;
+      opacity: .55;
+    }
+    .corner-red  .corner-label { color: #c00; }
+    .corner-blue .corner-label { color: #1a56db; }
+
+    .fighter-name {
+      font-size: .97rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .corner-red  .fighter-name { color: #b00; }
+    .corner-blue .fighter-name { color: #1a56db; }
+
+    .fighter-club {
+      font-size: .78rem;
+      color: #555;
+      margin-top: .15rem;
+    }
+    .fighter-country {
+      font-size: .72rem;
+      color: #888;
+    }
+
+    /* Swiss highlight */
+    .our-fighter .fighter-name::after {
+      content: ' 🇨🇭';
+      font-size: .85em;
+    }
+    .our-fighter {
+      background: rgba(255, 215, 0, .12) !important;
+    }
+
+    /* Phase footer */
+    .fight-footer {
+      padding: .3rem .8rem;
+      background: #f7f8fa;
+      border-top: 1px solid #eee;
+      font-size: .74rem;
+      color: #666;
+      display: flex;
+      gap: .8rem;
+    }
+
+    /* Search / filter */
+    .search-bar input {
+      width: 100%;
+      padding: .55rem .9rem;
+      border: 1.5px solid #dde;
+      border-radius: .6rem;
+      font-size: .93rem;
+      margin-bottom: 1rem;
+      outline: none;
+    }
+    .search-bar input:focus { border-color: #667eea; }
+
+    .no-results { text-align: center; color: #888; padding: 2rem 0; }
+
+    @media print {
+      .hero, .back-btn, .search-bar { display: none; }
+      .fight-card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>🥊 Fight Cards</h1>
+  <p>
+    {{ cards|length }} fight{% if cards|length != 1 %}s{% endif %} found
+    &nbsp;·&nbsp; {{ swiss_count }} Swiss fighter{% if swiss_count != 1 %}s{% endif %} registered
+    {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">🏠 {{ club_filter }}</span>{% endif %}
+    &nbsp;·&nbsp; <span style="opacity:.65;font-size:.85em">{{ total_fights }} total ring fights</span>
+  </p>
+</div>
+
+<div class="container-fluid px-3 mb-2">
+  <a href="/" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
+  <button onclick="window.print()" class="btn btn-outline-secondary btn-sm ms-2">🖨 Print</button>
+</div>
+
+<div class="container-fluid px-3">
+
+  {% if cards %}
+
+  <div class="search-bar">
+    <input type="search" id="card-filter" placeholder="🔍 Filter by name, ring or category…" autocomplete="off" />
+  </div>
+
+  <div id="cards-container">
+  {% for c in cards %}
+  <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
+
+    <div class="fight-header">
+      <span class="ring-badge">{{ c.ring }}</span>
+      <span class="time-badge">
+        {% if c.time %}{{ c.time }}{% if c.time_end %} – {{ c.time_end }}{% endif %}
+        {% if c.time_estimated %}<span class="time-est">(est.)</span>{% endif %}
+        {% else %}—{% endif %}
+      </span>
+      <span class="fight-no">
+        {% if c.fight_no %}#{{ c.fight_no }}{% endif %}
+        {% if c.seq_no %}&nbsp;·&nbsp;Fight {{ c.seq_no }}{% endif %}
+      </span>
+      <span class="cat-code">{{ c.category_code }}{% if c.phase %} &nbsp;·&nbsp; {{ c.phase }}{% endif %}</span>
+    </div>
+
+    <div class="corners">
+
+      {# RED corner #}
+      <div class="corner corner-red{% if c.our_color in ('red','both') %} our-fighter{% endif %}">
+        <div class="corner-label">🔴 Red Corner</div>
+        <div class="fighter-name">{{ c.fighter1.name }}</div>
+        {% if c.fighter1.club %}
+        <div class="fighter-club">{{ c.fighter1.club }}</div>
+        {% endif %}
+        {% if c.fighter1.country %}
+        <div class="fighter-country">{{ c.fighter1.country }}</div>
+        {% endif %}
+      </div>
+
+      {# BLUE corner #}
+      <div class="corner corner-blue{% if c.our_color in ('blue','both') %} our-fighter{% endif %}">
+        <div class="corner-label">🔵 Blue Corner</div>
+        <div class="fighter-name">{{ c.fighter2.name }}</div>
+        {% if c.fighter2.club %}
+        <div class="fighter-club">{{ c.fighter2.club }}</div>
+        {% endif %}
+        {% if c.fighter2.country %}
+        <div class="fighter-country">{{ c.fighter2.country }}</div>
+        {% endif %}
+      </div>
+
+    </div>
+
+  </div>
+  {% endfor %}
+  </div>
+
+  <div class="no-results" id="no-results" style="display:none">No matching fight cards.</div>
+
+  {% else %}
+  <div class="no-results">
+    <p>No fight cards found for the selected fighters.</p>
+    <p class="small text-muted">Make sure the registrations and ring-schedule files are from the same event.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script>
+  const input = document.getElementById('card-filter');
+  if (input) {
+    input.addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      const cards = document.querySelectorAll('.fight-card');
+      let visible = 0;
+      cards.forEach(c => {
+        const match = !q || c.dataset.search.toLowerCase().includes(q);
+        c.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+      document.getElementById('no-results').style.display = visible === 0 ? '' : 'none';
+    });
+  }
+</script>
+</body>
+</html>

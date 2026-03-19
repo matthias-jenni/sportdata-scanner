@@ -89,10 +89,12 @@ def save(
     swiss_count: int,
     draws_used: bool,
     club_filter: str = "",
+    type: str = "timetable",
 ) -> str:
-    """Persist a result set. Returns the slug. Overwrites existing same-slug entry."""
+    """Persist a result set. Returns the slug. Overwrites any existing entry with the same name."""
     slug = _slugify(name)
     entry = {
+        "type":         type,
         "name":         name.strip() or default_name(),
         "slug":         slug,
         "created":      datetime.now().isoformat(timespec="seconds"),
@@ -103,9 +105,20 @@ def save(
         "fighter_list": fighter_list,
     }
     if _sb:
+        # Delete any existing row with the same name (slug may have drifted)
+        _sb.table(_TABLE).delete().eq("name", entry["name"]).execute()
         _sb.table(_TABLE).upsert(entry).execute()
     else:
         _ensure_dir()
+        # Delete any existing files whose stored name matches (case-insensitive)
+        name_lower = entry["name"].lower()
+        for old in CACHE_DIR.glob("*.json"):
+            try:
+                old_data = json.loads(old.read_text(encoding="utf-8"))
+                if old_data.get("name", "").lower() == name_lower and old.stem != slug:
+                    old.unlink()
+            except Exception:
+                pass
         path = CACHE_DIR / f"{slug}.json"
         path.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
     return slug
@@ -156,6 +169,8 @@ def list_all() -> list[dict]:
                     "created":     data.get("created", ""),
                     "swiss_count": data.get("swiss_count", 0),
                     "draws_used":  data.get("draws_used", False),
+                    "club_filter": data.get("club_filter", ""),
+                    "type":        data.get("type", "timetable"),
                     "row_count":   len(data.get("rows", [])),
                 })
             except Exception:

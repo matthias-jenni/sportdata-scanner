@@ -296,6 +296,80 @@ def delete_cache(slug):
     return redirect(url_for("index"))
 
 
+@app.route("/ring-cards", methods=["POST"])
+def ring_cards():
+    """Upload registrations + ring-schedule PDF → show fight cards for Swiss fighters."""
+    from utils.parse_ring_schedule import extract_ring_fights, find_swiss_fights
+    import tempfile, pathlib
+
+    reg_file   = request.files.get("registrations")
+    ring_file  = request.files.get("ring_schedule")
+
+    if not reg_file or reg_file.filename == "":
+        flash("Please upload the registrations file.", "error")
+        return redirect(url_for("index"))
+    if not ring_file or ring_file.filename == "":
+        flash("Please upload the ring-schedule PDF.", "error")
+        return redirect(url_for("index"))
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            reg_ext  = _re.sub(r".*\.", ".", reg_file.filename.lower()) or ".pdf"
+            reg_path = tmp / f"registrations{reg_ext}"
+            ring_path = tmp / "ring-schedule.pdf"
+            reg_file.save(str(reg_path))
+            ring_file.save(str(ring_path))
+
+            swiss_fighters = _load_swiss_fighters(str(reg_path))
+            ring_fights    = extract_ring_fights(str(ring_path))
+
+        club_filter = request.form.get("club_filter", "").strip()
+        cards = find_swiss_fights(ring_fights, swiss_fighters, club_filter)
+
+        cache_name = request.form.get("cache_name", "").strip() or _cache.default_name()
+        slug = _cache.save(
+            name=cache_name,
+            rows=cards,
+            fighter_list=swiss_fighters,
+            swiss_count=len(swiss_fighters),
+            draws_used=False,
+            club_filter=club_filter,
+            type="ring-cards",
+        )
+
+        return render_template(
+            "ring_result.html",
+            cards=cards,
+            swiss_count=len(swiss_fighters),
+            club_filter=club_filter,
+            total_fights=len(ring_fights),
+            cache_name=cache_name,
+            cache_slug=slug,
+        )
+    except Exception:
+        flash(f"Error processing files: {traceback.format_exc()}", "error")
+        return redirect(url_for("index"))
+
+
+@app.route("/ring-cache/<slug>", methods=["GET"])
+def load_ring_cache(slug):
+    entry = _cache.load(slug)
+    if entry is None or entry.get("type") != "ring-cards":
+        flash(f"Fight-cards cache '{slug}' not found.", "error")
+        return redirect(url_for("index"))
+    return render_template(
+        "ring_result.html",
+        cards=entry["rows"],
+        swiss_count=entry["swiss_count"],
+        club_filter=entry.get("club_filter", ""),
+        total_fights=len(entry["rows"]),
+        cache_name=entry["name"],
+        cache_slug=slug,
+        cache_created=entry.get("created", ""),
+    )
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
