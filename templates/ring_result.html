@@ -149,6 +149,9 @@
     {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">💾 {{ cache_name }}</span>{% endif %}
     &nbsp;·&nbsp; <span style="opacity:.6;font-size:.82em">{{ total_fights }} total ring fights</span>
   </p>
+  <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
+    {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}Only fighters from Switzerland (SUI) are shown.{% endif %}
+  </p>
 </div>
 
 <div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
@@ -428,6 +431,9 @@
     &nbsp;·&nbsp; {{ swiss_count }} Swiss fighter{% if swiss_count != 1 %}s{% endif %} registered
     {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">🏠 {{ club_filter }}</span>{% endif %}
     &nbsp;·&nbsp; <span style="opacity:.65;font-size:.85em">{{ total_fights }} total ring fights</span>
+  </p>
+  <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
+    {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}Only fighters from Switzerland (SUI) are shown.{% endif %}
   </p>
 </div>
 
