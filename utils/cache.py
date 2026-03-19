@@ -13,9 +13,15 @@ Supabase table (run once in your Supabase SQL editor):
         created      TIMESTAMPTZ NOT NULL DEFAULT now(),
         swiss_count  INTEGER     NOT NULL DEFAULT 0,
         draws_used   BOOLEAN     NOT NULL DEFAULT false,
+        club_filter  TEXT        NOT NULL DEFAULT '',
+        type         TEXT        NOT NULL DEFAULT 'timetable',
         rows         JSONB       NOT NULL DEFAULT '[]',
         fighter_list JSONB       NOT NULL DEFAULT '[]'
     );
+
+    -- If the table already exists without the newer columns, run:
+    ALTER TABLE caches ADD COLUMN IF NOT EXISTS club_filter TEXT NOT NULL DEFAULT '';
+    ALTER TABLE caches ADD COLUMN IF NOT EXISTS type        TEXT NOT NULL DEFAULT 'timetable';
 
 Cache entry schema (both backends):
 {
@@ -107,7 +113,21 @@ def save(
     if _sb:
         # Delete any existing row with the same name (slug may have drifted)
         _sb.table(_TABLE).delete().eq("name", entry["name"]).execute()
-        _sb.table(_TABLE).upsert(entry).execute()
+        try:
+            _sb.table(_TABLE).upsert(entry).execute()
+        except Exception as exc:
+            # If the table is missing columns (e.g. schema not yet migrated),
+            # retry with only the core columns every Supabase table has.
+            msg = str(exc)
+            if "column" in msg.lower() and "schema cache" in msg.lower():
+                base = {k: entry[k] for k in (
+                    "slug", "name", "created", "swiss_count",
+                    "draws_used", "rows", "fighter_list"
+                ) if k in entry}
+                _sb.table(_TABLE).upsert(base).execute()
+                print(f"[cache] Warning – upserted without extended columns: {exc}")
+            else:
+                raise
     else:
         _ensure_dir()
         # Delete any existing files whose stored name matches (case-insensitive)
