@@ -241,7 +241,7 @@ def process():
                   "contains 'SUI', 'Switzerland' or similar.", "warning")
 
         # ---- persist to cache -----------------------------------------------
-        cache_name = request.form.get("cache_name", "").strip() or _cache.default_name()
+        cache_name = (request.form.get("cache_name", "").strip() or _cache.default_name()) + "_categories"
         slug = _cache.save(
             name=cache_name,
             rows=rows,
@@ -327,7 +327,7 @@ def ring_cards():
         club_filter = request.form.get("club_filter", "").strip()
         cards = find_swiss_fights(ring_fights, swiss_fighters, club_filter)
 
-        cache_name = request.form.get("cache_name", "").strip() or _cache.default_name()
+        cache_name = (request.form.get("cache_name", "").strip() or _cache.default_name()) + "_fightcards"
         slug = _cache.save(
             name=cache_name,
             rows=cards,

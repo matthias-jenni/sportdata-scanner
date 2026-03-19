@@ -177,6 +177,8 @@
   const schedInput  = document.getElementById('schedule');
   const ringInput   = document.getElementById('ring_schedule');
   const submitBtn   = document.getElementById('submit-btn');
+  const cacheInput  = document.getElementById('cache_name');
+  const defaultBase = '{{ default_name }}';
 
   const ACTIONS = {
     schedule:  '/process',
@@ -188,11 +190,17 @@
     ringcards: 'Generate Fight Cards →',
   };
 
+  const SUFFIXES = {
+    schedule:  '_categories',
+    ringcards: '_fightcards',
+  };
+
   function switchTab(tab) {
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     sections.forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
     form.action = ACTIONS[tab];
     submitBtn.textContent = LABELS[tab];
+    cacheInput.placeholder = defaultBase + SUFFIXES[tab];
 
     // Manage required so inactive tab never blocks submission
     schedInput.required = (tab === 'schedule');
