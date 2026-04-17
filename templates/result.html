@@ -358,9 +358,10 @@
     });
   });
 
-  let showPast = false;
-  let showElim = false;
-  let filterQ  = '';
+  // pastState: 0 = show all (fully colored), 1 = dim past, 2 = hide past
+  let pastState = 0;
+  let showElim  = false;
+  let filterQ   = '';
 
   function toMin(hhmm) {
     const p = hhmm.split(':');
@@ -371,6 +372,7 @@
     const now = new Date();
     const cur = now.getHours() * 60 + now.getMinutes();
 
+    const GRACE = 30; // minutes — keeps delayed fights visible
     let pastCount = 0, elimCount = 0, upNextDone = false, visibleCount = 0;
 
     // ---- cards ----
@@ -378,13 +380,13 @@
     cards.forEach(c => {
       const end  = toMin(c.dataset.end  || '');
       const name = c.dataset.name || '';
-      const isPast = end >= 0 && cur > end;
+      const isPast = end >= 0 && cur > end + GRACE;
       const isElim = eliminated.has(c.dataset.key || '');
       const matchesFilter = !filterQ || name.includes(filterQ)
                          || (c.dataset.cat  || '').includes(filterQ)
                          || (c.dataset.club || '').includes(filterQ);
 
-      c.classList.toggle('past', isPast && !isElim);
+      c.classList.toggle('past', isPast && !isElim && pastState >= 1);
       c.classList.toggle('eliminated', isElim);
       c.querySelector('.up-next-label').style.display = 'none';
       c.classList.remove('up-next');
@@ -395,8 +397,8 @@
       if (isPast && !isElim) pastCount++;
       if (isElim) elimCount++;
 
-      const hidden = (isPast && !isElim && !showPast) || (isElim && !showElim) || !matchesFilter;
-      c.classList.toggle('past-hidden',     isPast && !isElim && !showPast);
+      const hidden = (isPast && !isElim && pastState === 2) || (isElim && !showElim) || !matchesFilter;
+      c.classList.toggle('past-hidden',     isPast && !isElim && pastState === 2);
       c.classList.toggle('eliminated-hidden', isElim && !showElim);
       c.classList.toggle('filter-hidden', !matchesFilter);
 
@@ -414,15 +416,15 @@
     document.querySelectorAll('tr[data-end]').forEach(r => {
       const end  = toMin(r.dataset.end  || '');
       const name = r.dataset.name || '';
-      const isPast = end >= 0 && cur > end;
+      const isPast = end >= 0 && cur > end + GRACE;
       const isElim = eliminated.has(r.dataset.key || '');
       const matchesFilter = !filterQ || name.includes(filterQ)
                          || (r.dataset.cat  || '').includes(filterQ)
                          || (r.dataset.club || '').includes(filterQ);
 
-      r.classList.toggle('past', isPast && !isElim);
+      r.classList.toggle('past', isPast && !isElim && pastState >= 1);
       r.classList.toggle('eliminated', isElim);
-      r.classList.toggle('past-hidden',       isPast && !isElim && !showPast);
+      r.classList.toggle('past-hidden',       isPast && !isElim && pastState === 2);
       r.classList.toggle('eliminated-hidden', isElim && !showElim);
       r.classList.toggle('filter-hidden', !matchesFilter);
       r.classList.remove('up-next');
@@ -439,9 +441,10 @@
     // ---- bottom bar ----
     const toggleBtn = document.getElementById('past-toggle');
     toggleBtn.style.display = pastCount > 0 ? '' : 'none';
-    toggleBtn.textContent   = showPast
-      ? `Hide ${pastCount} past`
-      : `Show ${pastCount} past`;
+    const _labels = ['Dim past', 'Hide past', 'Show past'];
+    const _styles = ['btn btn-outline-secondary btn-sm', 'btn btn-outline-warning btn-sm', 'btn btn-secondary btn-sm'];
+    toggleBtn.textContent = `${_labels[pastState]} (${pastCount})`;
+    toggleBtn.className   = _styles[pastState];
 
     const elimBtn = document.getElementById('elim-toggle');
     elimBtn.style.display = elimCount > 0 ? '' : 'none';
@@ -459,13 +462,8 @@
   }
 
   function togglePast() {
-    showPast = !showPast;
+    pastState = (pastState + 1) % 3;
     update();
-    if (showPast) {
-      // scroll first past card into view
-      const first = document.querySelector('.fight-card.past');
-      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
   }
 
   document.getElementById('name-filter').addEventListener('input', function() {
