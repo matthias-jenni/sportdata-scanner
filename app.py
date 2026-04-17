@@ -232,14 +232,9 @@ def process():
 
             swiss_fighters = _load_swiss_fighters(str(reg_path))
 
-            # Optional club filter
+            # Record the typed club as the default filter for this cache entry;
+            # actual filtering is client-side so all rows are stored.
             club_filter = request.form.get('club_filter', '').strip()
-            if club_filter:
-                cf_lower = club_filter.lower()
-                swiss_fighters = [
-                    f for f in swiss_fighters
-                    if cf_lower in f.get('club', '').lower()
-                ]
             schedule = _load_schedule(str(sched_path))
             rows = _match(swiss_fighters, schedule, draws)
 
@@ -273,6 +268,8 @@ def load_cache(slug):
     if entry is None:
         flash(f"Cache '{slug}' not found.", "error")
         return redirect(url_for("index"))
+    # ?club= query param overrides the saved default filter
+    club_filter = request.args.get('club', entry.get('club_filter', ''))
     return render_template(
         "result.html",
         rows=entry["rows"],
@@ -282,7 +279,7 @@ def load_cache(slug):
         cache_name=entry["name"],
         cache_slug=slug,
         cache_created=entry.get("created", ""),
-        club_filter=entry.get("club_filter", ""),
+        club_filter=club_filter,
     )
 
 

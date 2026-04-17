@@ -213,7 +213,7 @@
   {% if draws_used %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🎲 draws applied</span>{% endif %}
   {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">💾 {{ cache_name }}</span>{% endif %}</p>
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
-    {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}Only fighters from Switzerland (SUI) are shown.{% endif %}
+    All Swiss (SUI) fighters shown — use the filter to narrow by club.
   </p>
   {% if schedule_count is defined and schedule_count %}
   <p style="opacity:.65;font-size:.78rem;margin:0">
@@ -361,7 +361,7 @@
   // pastState: 0 = show all (fully colored), 1 = dim past, 2 = hide past
   let pastState = 0;
   let showElim  = false;
-  let filterQ   = '';
+  let filterQ   = {{ club_filter | tojson }}.toLowerCase();
 
   function toMin(hhmm) {
     const p = hhmm.split(':');
@@ -466,8 +466,15 @@
     update();
   }
 
-  document.getElementById('name-filter').addEventListener('input', function() {
+  const _filterInput = document.getElementById('name-filter');
+  if (filterQ) _filterInput.value = {{ club_filter | tojson }};
+
+  _filterInput.addEventListener('input', function() {
     filterQ = this.value.trim().toLowerCase();
+    const url = new URL(window.location);
+    if (filterQ) url.searchParams.set('club', filterQ);
+    else url.searchParams.delete('club');
+    history.replaceState(null, '', url);
     update();
   });
 
