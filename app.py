@@ -21,6 +21,7 @@ from flask import (
 from utils.parse_registrations import get_swiss_fighters
 from utils.parse_registrations_html import get_swiss_fighters_html
 from utils.parse_schedule import extract_schedule
+from utils.parse_schedule_html import extract_schedule_html
 from utils.parse_draws import extract_draws, pool_for_fighter
 from utils import cache as _cache
 
@@ -30,6 +31,13 @@ def _load_swiss_fighters(path: str) -> list[dict]:
     if path.lower().endswith(('.html', '.htm')):
         return get_swiss_fighters_html(path)
     return get_swiss_fighters(path)
+
+
+def _load_schedule(path: str) -> list[dict]:
+    """Dispatch to the correct schedule parser based on file extension."""
+    if path.lower().endswith(('.html', '.htm')):
+        return extract_schedule_html(path)
+    return extract_schedule(path)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -165,12 +173,12 @@ def debug():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
         reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
+        sched_ext = _re.sub(r'.*\.', '.', sched_file.filename.lower()) or '.pdf'
         reg_path = tmp / f"registrations{reg_ext}"
-        sched_path = tmp / "schedule.pdf"
+        sched_path = tmp / f"schedule{sched_ext}"
         reg_file.save(str(reg_path))
         sched_file.save(str(sched_path))
         from utils.parse_registrations import extract_fighters, get_swiss_fighters
-        from utils.parse_schedule import extract_schedule
         # For debug, always try PDF extractor; HTML path still shows swiss fighters
         ext = reg_path.suffix.lower()
         if ext in ('.html', '.htm'):
@@ -178,7 +186,7 @@ def debug():
         else:
             all_fighters = extract_fighters(str(reg_path))
         swiss = _load_swiss_fighters(str(reg_path))
-        schedule = extract_schedule(str(sched_path))
+        schedule = _load_schedule(str(sched_path))
     result = {
         "registrations_total": len(all_fighters),
         "registrations_sample": all_fighters[:20],
@@ -201,8 +209,7 @@ def process():
         flash("Please upload the registrations PDF.", "error")
         return redirect(url_for("index"))
     if not sched_file or sched_file.filename == "":
-        flash("Please upload the schedule PDF.", "error")
-        return redirect(url_for("index"))
+            flash("Please upload the schedule PDF or HTML.", "error")
 
     import tempfile, pathlib
 
@@ -210,8 +217,9 @@ def process():
         with tempfile.TemporaryDirectory() as tmp:
             tmp = pathlib.Path(tmp)
             reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
+            sched_ext = _re.sub(r'.*\.', '.', sched_file.filename.lower()) or '.pdf'
             reg_path = tmp / f"registrations{reg_ext}"
-            sched_path = tmp / "schedule.pdf"
+            sched_path = tmp / f"schedule{sched_ext}"
             reg_file.save(str(reg_path))
             sched_file.save(str(sched_path))
 
@@ -232,7 +240,7 @@ def process():
                     f for f in swiss_fighters
                     if cf_lower in f.get('club', '').lower()
                 ]
-            schedule = extract_schedule(str(sched_path))
+            schedule = _load_schedule(str(sched_path))
             rows = _match(swiss_fighters, schedule, draws)
 
         if not swiss_fighters:
