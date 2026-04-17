@@ -260,18 +260,7 @@ def process():
         )
         # -----------------------------------------------------------------------
 
-        return render_template(
-            "result.html",
-            rows=rows,
-            swiss_count=len(swiss_fighters),
-            fighter_list=swiss_fighters,
-            draws_used=bool(draws),
-            draws_count=len(draws),
-            schedule_count=len(schedule),
-            cache_name=cache_name,
-            cache_slug=slug,
-            club_filter=club_filter,
-        )
+        return redirect(url_for("load_cache", slug=slug))
 
     except Exception:
         flash(f"Error processing PDFs: {traceback.format_exc()}", "error")
@@ -346,15 +335,7 @@ def ring_cards():
             type="ring-cards",
         )
 
-        return render_template(
-            "ring_result.html",
-            cards=cards,
-            swiss_count=len(swiss_fighters),
-            club_filter=club_filter,
-            total_fights=len(ring_fights),
-            cache_name=cache_name,
-            cache_slug=slug,
-        )
+        return redirect(url_for("load_ring_cache", slug=slug))
     except Exception:
         flash(f"Error processing files: {traceback.format_exc()}", "error")
         return redirect(url_for("index"))
