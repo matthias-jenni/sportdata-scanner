@@ -15,7 +15,7 @@
 
     /* ---- Header ---- */
     .hero {
-      background: linear-gradient(135deg, #d00 0%, #a00 100%);
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
       color: #fff;
       padding: 1.8rem 1rem 1.5rem;
       text-align: center;
@@ -46,8 +46,8 @@
       font-weight: 600;
     }
     .badge-time {
-      background: #d00;
-      color: #fff;
+      background: #dcfce7;
+      color: #14532d;
       border-radius: .4rem;
       padding: .2rem .55rem;
       font-size: .85rem;
@@ -201,19 +201,45 @@
       .table thead { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       @page { margin: 1.5cm; }
     }
-  </style>
+  
+    .btn-teal {
+      background-color: #0d9488;
+      border-color: #0d9488;
+      color: white;
+    }
+    .btn-teal:hover:not(:disabled) {
+      background-color: #0f766e;
+      border-color: #0f766e;
+      color: white;
+    }
+    .btn-teal:disabled {
+      background-color: #99f6e4;
+      border-color: #99f6e4;
+      color: white;
+    }
+    .btn-outline-teal {
+      color: #0d9488;
+      border-color: #0d9488;
+      background: transparent;
+    }
+    .btn-outline-teal:hover:not(:disabled) {
+      background-color: #0d9488;
+      border-color: #0d9488;
+      color: white;
+    }
+</style>
 </head>
 <body>
 
 <div class="hero">
-  <h1>🥋 Fighter Timetable</h1>
+  <h1>🥊 Fighter Timetable</h1>
   <p>{{ swiss_count }} fighter{% if swiss_count != 1 %}s{% endif %} registered
   · {{ rows|length }} fight slot{% if rows|length != 1 %}s{% endif %} found
   {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🏠 {{ club_filter }}</span>{% endif %}
   {% if draws_used %}&nbsp;<span style="background:rgba(255,255,255,.25);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">🎲 draws applied</span>{% endif %}
   {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.4rem;padding:.1rem .5rem;font-size:.8rem">💾 {{ cache_name }}</span>{% endif %}</p>
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
-    All parsed fighters shown — use the filter to narrow by club.
+    All parsed fighters shown — use the filter to narrow by name / club / category.
   </p>
   {% if schedule_count is defined and schedule_count %}
   <p style="opacity:.65;font-size:.78rem;margin:0">
@@ -320,9 +346,9 @@
 
 {# Sticky bottom bar #}
 <div class="dl-bar">
-  <button class="btn btn-red" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <button class="btn btn-teal" onclick="window.print()">🖨️ Print / Save as PDF</button>
   <button class="btn btn-outline-secondary btn-sm" id="past-toggle" onclick="togglePast()" style="display:none"></button>
-  <button class="btn btn-outline-danger btn-sm" id="elim-toggle" onclick="toggleElim()" style="display:none"></button>
+  <button class="btn btn-outline-teal btn-sm" id="elim-toggle" onclick="toggleElim()" style="display:none"></button>
   <span class="text-muted small ms-auto" id="visible-count"></span>
 </div>
 
@@ -442,7 +468,7 @@
     const toggleBtn = document.getElementById('past-toggle');
     toggleBtn.style.display = pastCount > 0 ? '' : 'none';
     const _labels = ['Dim past', 'Hide past', 'Show past'];
-    const _styles = ['btn btn-outline-secondary btn-sm', 'btn btn-outline-warning btn-sm', 'btn btn-secondary btn-sm'];
+    const _styles = ['btn btn-outline-secondary btn-sm', 'btn btn-outline-teal btn-sm', 'btn btn-secondary btn-sm'];
     toggleBtn.textContent = `${_labels[pastState]} (${pastCount})`;
     toggleBtn.className   = _styles[pastState];
 

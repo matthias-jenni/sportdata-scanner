@@ -10,7 +10,7 @@
     body { background: #f0f2f5; font-family: system-ui, sans-serif; }
 
     .hero {
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
       color: #fff;
       padding: 1.8rem 1rem 1.5rem;
       text-align: center;
@@ -30,15 +30,22 @@
     }
 
     .card-summary {
-      display: flex;
+      display: grid;
+      grid-template-columns: 55px minmax(120px, 2fr) auto minmax(80px, 3fr) 20px;
       align-items: center;
-      gap: .55rem;
-      padding: .55rem .85rem;
+      gap: 0.75rem;
+      padding: .65rem .85rem;
       cursor: pointer;
       user-select: none;
-      flex-wrap: wrap;
     }
     .card-summary:hover { background: #fafafa; }
+    
+    .col-time, .col-ring { font-size: .8rem; white-space: nowrap; }
+    .col-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
+    .col-cat { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+    .col-chevron { display: flex; justify-content: flex-end; }
+
+
 
     /* Fighter name pill */
     .our-name {
@@ -60,7 +67,7 @@
       color: #555;
     }
     .meta-badges .badge-ring  { background: #e8eaf0; color: #333; border-radius: .3rem; padding: .1rem .4rem; font-weight: 600; }
-    .meta-badges .badge-time  { background: #e8f5e9; color: #2e7d32; border-radius: .3rem; padding: .1rem .4rem; font-weight: 600; }
+    .meta-badges .badge-time  { background: #dcfce7; color: #14532d; border-radius: .3rem; padding: .1rem .4rem; font-weight: 800; letter-spacing: .3px; }
     .meta-badges .badge-time-est { background: #fff8e1; color: #f57f17; border-radius: .3rem; padding: .1rem .4rem; }
     .meta-badges .badge-fight { color: #888; }
     .meta-badges .badge-cat   { color: #777; font-size: .74rem; }
@@ -85,6 +92,21 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
     }
+
+    @media (max-width: 580px) {
+      .card-summary {
+        grid-template-columns: 55px 1fr 20px !important;
+        grid-template-rows: auto auto;
+        gap: 0.4rem;
+        padding: .5rem .6rem;
+      }
+      .col-time { grid-column: 1; grid-row: 1; }
+      .col-name { grid-column: 2 / span 2; grid-row: 1; white-space: normal; }
+      .col-ring { grid-column: 1; grid-row: 2; align-items: start; display: flex; }
+      .col-cat  { grid-column: 2; grid-row: 2; }
+      .col-chevron { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; }
+    }
+
     @media (max-width: 480px) {
       .corners { grid-template-columns: 1fr; }
     }
@@ -136,7 +158,33 @@
       .card-details { display: block !important; }
       .fight-card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; margin-bottom: .5cm; }
     }
-  </style>
+  
+    .btn-teal {
+      background-color: #0d9488;
+      border-color: #0d9488;
+      color: white;
+    }
+    .btn-teal:hover:not(:disabled) {
+      background-color: #0f766e;
+      border-color: #0f766e;
+      color: white;
+    }
+    .btn-teal:disabled {
+      background-color: #99f6e4;
+      border-color: #99f6e4;
+      color: white;
+    }
+    .btn-outline-teal {
+      color: #0d9488;
+      border-color: #0d9488;
+      background: transparent;
+    }
+    .btn-outline-teal:hover:not(:disabled) {
+      background-color: #0d9488;
+      border-color: #0d9488;
+      color: white;
+    }
+</style>
 </head>
 <body>
 
@@ -186,22 +234,41 @@
 
   <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
 
+    
     {# ---- Collapsed summary row ---- #}
     <div class="card-summary" onclick="toggleCard(this.closest('.fight-card'))">
-      <span class="our-name {{ our_class }}">{{ our_name }}</span>
-      <div class="meta-badges">
-        <span class="badge-ring">{{ c.ring }}</span>
+      <!-- 1. Time -->
+      <div class="col-time meta-badges">
         {% if c.time %}
           {% if c.time_estimated %}
             <span class="badge-time-est">~{{ c.time }}</span>
           {% else %}
             <span class="badge-time">{{ c.time }}</span>
           {% endif %}
+        {% else %}
+            <span class="text-muted" style="opacity:0.5">-</span>
         {% endif %}
+      </div>
+
+      <!-- 2. Name -->
+      <div class="col-name">
+        <span class="our-name {{ our_class }}">{{ our_name }}</span>
+      </div>
+
+      <!-- 3. Ring no. -->
+      <div class="col-ring meta-badges">
+        <span class="badge-ring">{{ c.ring }}</span>
+      </div>
+
+      <!-- 4. Category -->
+      <div class="col-cat meta-badges">
         {% if c.fight_no %}<span class="badge-fight">#{{ c.fight_no }}</span>{% endif %}
         <span class="badge-cat">{{ c.category_code }}</span>
       </div>
-      <span class="chevron">▼</span>
+
+      <div class="col-chevron">
+        <span class="chevron">▼</span>
+      </div>
     </div>
 
     {# ---- Expanded details ---- #}
