@@ -18,19 +18,19 @@ from flask import (
     flash,
 )
 
-from utils.parse_registrations import get_swiss_fighters
-from utils.parse_registrations_html import get_swiss_fighters_html
+from utils.parse_registrations import get_fighters
+from utils.parse_registrations_html import get_fighters_html
 from utils.parse_schedule import extract_schedule
 from utils.parse_schedule_html import extract_schedule_html
 from utils.parse_draws import extract_draws, pool_for_fighter
 from utils import cache as _cache
 
 
-def _load_swiss_fighters(path: str) -> list[dict]:
+def _load_fighters(path: str, country_filter: str) -> list[dict]:
     """Dispatch to the correct parser based on file extension."""
     if path.lower().endswith(('.html', '.htm')):
-        return get_swiss_fighters_html(path)
-    return get_swiss_fighters(path)
+        return get_fighters_html(path, country_filter)
+    return get_fighters(path, country_filter)
 
 
 def _load_schedule(path: str) -> list[dict]:
@@ -178,14 +178,17 @@ def debug():
         sched_path = tmp / f"schedule{sched_ext}"
         reg_file.save(str(reg_path))
         sched_file.save(str(sched_path))
-        from utils.parse_registrations import extract_fighters, get_swiss_fighters
-        # For debug, always try PDF extractor; HTML path still shows swiss fighters
+        from utils.parse_registrations import extract_fighters, get_fighters
+        # For debug, always try PDF extractor; HTML path still shows country fighters
         ext = reg_path.suffix.lower()
+        
+        country_filter = request.form.get("country_filter", "SUI").strip()
+        
         if ext in ('.html', '.htm'):
-            all_fighters = get_swiss_fighters_html(str(reg_path))
+            all_fighters = get_fighters_html(str(reg_path), country_filter)
         else:
             all_fighters = extract_fighters(str(reg_path))
-        swiss = _load_swiss_fighters(str(reg_path))
+        swiss = _load_fighters(str(reg_path), country_filter)
         schedule = _load_schedule(str(sched_path))
     result = {
         "registrations_total": len(all_fighters),
@@ -230,7 +233,8 @@ def process():
                 draws_file.save(str(draws_path))
                 draws = extract_draws(str(draws_path))
 
-            swiss_fighters = _load_swiss_fighters(str(reg_path))
+            country_filter = request.form.get("country_filter", "SUI").strip()
+            swiss_fighters = _load_fighters(str(reg_path), country_filter)
 
             # Record the typed club as the default filter for this cache entry;
             # actual filtering is client-side so all rows are stored.
@@ -239,9 +243,9 @@ def process():
             rows = _match(swiss_fighters, schedule, draws)
 
         if not swiss_fighters:
-            flash("No Swiss fighters found in the registrations PDF. "
+            flash(f"No fighters found for country '{country_filter}' in the registrations PDF. "
                   "Check that the file is correct and that the country column "
-                  "contains 'SUI', 'Switzerland' or similar.", "warning")
+                  "matches the filter.", "warning")
 
         # ---- persist to cache -----------------------------------------------
         cache_name = (request.form.get("cache_name", "").strip() or _cache.default_name()) + "_categories"
@@ -315,7 +319,8 @@ def ring_cards():
             reg_file.save(str(reg_path))
             ring_file.save(str(ring_path))
 
-            swiss_fighters = _load_swiss_fighters(str(reg_path))
+            country_filter = request.form.get("country_filter", "SUI").strip()
+            swiss_fighters = _load_fighters(str(reg_path), country_filter)
             ring_fights    = extract_ring_fights(str(ring_path))
 
         club_filter = request.form.get("club_filter", "").strip()

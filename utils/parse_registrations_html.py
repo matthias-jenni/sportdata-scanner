@@ -26,9 +26,9 @@ _SWISS_NAMES   = {'switzerland', 'schweiz', 'suisse', 'svizzera'}
 _SUMMARY_RE = re.compile(r'nennungen gesamt|total athletes', re.IGNORECASE)
 
 
-def get_swiss_fighters_html(html_path: str) -> list[dict]:
-    """Return Swiss fighters from a saved sportdata HTML page."""
-    fighters = _parse_html(html_path, swiss_only=True)
+def get_fighters_html(html_path: str, country_filter: str = 'SUI') -> list[dict]:
+    """Return fighters matching country_filter from a saved sportdata HTML page."""
+    fighters = _parse_html(html_path, country_filter=country_filter)
 
     # Deduplicate by (name, category): keep first occurrence
     seen: set[tuple] = set()
@@ -53,18 +53,30 @@ def get_swiss_fighters_html(html_path: str) -> list[dict]:
 
 def extract_fighters_html(html_path: str) -> list[dict]:
     """Return ALL fighters from a saved sportdata HTML page."""
-    return _parse_html(html_path, swiss_only=False)
+    return _parse_html(html_path, country_filter=None)
 
 
-def _is_swiss(text: str) -> bool:
-    """Return True if the cell text indicates a Swiss entry."""
-    text_stripped = text.strip()
-    # Check for "(SUI)" anywhere in the text
-    m = re.search(r'\(([A-Z]{2,3})\)', text_stripped)
-    if m and m.group(1) in _SWISS_ABBREVS:
+def _matches_country(text: str, country_filter: str) -> bool:
+    """Return True if the cell text matches the given country string or code."""
+    if not country_filter:
         return True
-    text_lower = text_stripped.lower()
-    return any(name in text_lower for name in _SWISS_NAMES)
+    
+    text_stripped = text.strip()
+    
+    # Check for abbreviation, e.g. "(SUI)" or "(GER)"
+    m = re.search(r'\(([A-Z]{2,3})\)', text_stripped)
+    if m:
+        if m.group(1).upper() == country_filter.upper():
+            return True
+            
+    # For Swiss edge case, still treat mapping for known names
+    if country_filter.upper() == 'SUI':
+        text_lower = text_stripped.lower()
+        if any(name in text_lower for name in _SWISS_NAMES):
+            return True
+            
+    # Alternatively check if country_filter is present exactly in the text
+    return country_filter.lower() in text_stripped.lower()
 
 
 def _extract_club(team_text: str) -> str:
@@ -84,7 +96,7 @@ def _extract_club(team_text: str) -> str:
     return text
 
 
-def _parse_html(html_path: str, swiss_only: bool) -> list[dict]:
+def _parse_html(html_path: str, country_filter: str | None) -> list[dict]:
     with open(html_path, 'r', encoding='utf-8', errors='replace') as f:
         html = f.read()
 
@@ -114,7 +126,7 @@ def _parse_html(html_path: str, swiss_only: bool) -> list[dict]:
         if m:
             country = m.group(1)
 
-        if swiss_only and not _is_swiss(team_text):
+        if country_filter and not _matches_country(team_text, country_filter):
             continue
 
         # Normalise: uppercase name and category to match PDF-based code paths

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Swiss Fighter Timetable</title>
+  <title>Sportdata Schedule Scanner</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous" />
   <style>
@@ -18,6 +18,7 @@
     }
     .hero h1 { font-size: clamp(1.4rem, 5vw, 2.1rem); font-weight: 700; margin-bottom: .25rem; }
     .hero p  { opacity: .85; font-size: .9rem; margin: 0; }
+    
     .card-upload {
       max-width: 540px;
       margin: 0 auto 2rem;
@@ -29,20 +30,64 @@
     .btn-primary { background: #d00; border-color: #d00; }
     .btn-primary:hover { background: #a00; border-color: #a00; }
 
-    /* Tabs */
-    .nav-tabs .nav-link          { color: #555; font-weight: 500; }
-    .nav-tabs .nav-link.active   { color: #d00; font-weight: 700; border-bottom-color: #fff; }
-    .nav-tabs .nav-link:hover    { color: #a00; }
-    .tab-section { display: none; }
-    .tab-section.active { display: block; }
+    /* Wizard Styles */
+    .wizard-step {
+      opacity: 0.4;
+      pointer-events: none;
+      transition: all 0.3s ease;
+      margin-bottom: 2rem;
+      border-left: 4px solid #dee2e6;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+    .wizard-step.active {
+      opacity: 1;
+      pointer-events: auto;
+      border-left-color: #d00;
+    }
+    .step-number {
+      position: absolute;
+      left: -1.25rem;
+      top: -0.2rem;
+      width: 2.2rem;
+      height: 2.2rem;
+      background: #dee2e6;
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      transition: background 0.3s ease;
+    }
+    .wizard-step.active .step-number {
+      background: #d00;
+    }
+    
+    /* Mode Select Box */
+    .mode-select {
+      border: 2px solid #dee2e6;
+      border-radius: 0.75rem;
+      padding: 1.25rem 0.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: #fff;
+      height: 100%;
+    }
+    .mode-select:hover { border-color: #d00; background: #fff5f5; }
+    .mode-select.selected { border-color: #d00; background: #fff5f5; box-shadow: 0 0 0 0.25rem rgba(221,0,0,0.15); }
+    .mode-select h4 { margin-top: 0.5rem; font-size: 1.1rem; margin-bottom: 0.25rem; color:#333; font-weight: bold; }
+    .mode-select p { font-size: 0.8rem; color: #6c757d; margin: 0; line-height: 1.3;}
+    .mode-select:focus { outline: none; border-color: #d00; }
   </style>
 </head>
 <body>
 
 <div class="hero">
-  <div style="font-size:2.2rem">🇨🇭</div>
-  <h1>Swiss Fighter Timetable</h1>
-  <p>Upload registrations and a schedule to generate your Swiss fighter overview.</p>
+  <div style="font-size:2.2rem">🥋</div>
+  <h1>Sportdata Schedule Scanner</h1>
+  <p>Upload registrations and a schedule to generate your fighter overview.</p>
 </div>
 
 <div class="container">
@@ -56,95 +101,107 @@
   {% endwith %}
 
   <div class="card card-upload">
-    <div class="card-body p-4">
-
+    <div class="card-body p-4 pt-5 pb-5">
       <form method="post" action="/process" enctype="multipart/form-data" id="main-form">
 
-        {# ---- COMMON FIELDS ---- #}
-        <div class="mb-3">
-          <label for="registrations" class="form-label">📋 Registrations <span class="text-muted fw-normal small">PDF or HTML</span></label>
-          <input type="file" class="form-control" id="registrations" name="registrations"
-                 accept=".pdf,.html,.htm" required />
-          <div class="form-text">PDF, <strong>or</strong> use <em>File → Save Page As</em> in your browser and upload the <code>.html</code> file.</div>
-        </div>
-
-        <div class="mb-3">
-          <label for="club_filter" class="form-label">🏠 Filter by club <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
-          <input type="text" class="form-control" id="club_filter" name="club_filter"
-                 placeholder="e.g. nippon" maxlength="80" />
-          <div class="form-text">Partial name, case-insensitive. Leave empty for all Swiss fighters.</div>
-        </div>
-
-        <div class="mb-3">
-          <label for="cache_name" class="form-label">💾 Save as <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
-          <input type="text" class="form-control" id="cache_name" name="cache_name"
-                 placeholder="{{ default_name }}" maxlength="80" />
-          <div class="form-text">Name for the saved result. Defaults to today's date.</div>
-        </div>
-
-        <hr class="my-3" />
-
-        {# ---- TABS ---- #}
-        <ul class="nav nav-tabs mb-3" id="mode-tabs">
-          <li class="nav-item">
-            <button type="button" class="nav-link active" data-tab="schedule">🗓️ Category Schedule</button>
-          </li>
-          <li class="nav-item">
-            <button type="button" class="nav-link" data-tab="ringcards">🥊 Fight Cards</button>
-          </li>
-        </ul>
-
-        {# ---- TAB: Category Schedule ---- #}
-        <div class="tab-section active" id="tab-schedule">
-
+        <!-- STEP 1 -->
+        <div class="wizard-step active" id="step-1">
+          <div class="step-number">1</div>
+          <h5 class="mb-3 fw-bold text-dark">The Fighters</h5>
+          
           <div class="mb-3">
-            <label for="schedule" class="form-label">🗓️ Category Schedule <span class="text-muted fw-normal small">PDF or HTML</span></label>
-            <input type="file" class="form-control" id="schedule" name="schedule"
-                   accept=".pdf,.html,.htm" />
-            <div class="form-text">PDF, <strong>or</strong> use <em>File → Save Page As</em> in your browser and upload the <code>.html</code> file.</div>
+            <label for="registrations" class="form-label">📋 Registrations File <span class="text-danger">*</span></label>
+            <input type="file" class="form-control" id="registrations" name="registrations" accept=".pdf,.html,.htm" required />
+            <div class="form-text">PDF, or standard HTML Page.</div>
           </div>
 
-          <div class="mb-3">
-            <label for="draws" class="form-label">🎲 Draws PDF <span class="badge bg-secondary" style="font-size:.68rem;vertical-align:middle">optional</span></label>
-            <input type="file" class="form-control" id="draws" name="draws" accept=".pdf" />
-            <div class="form-text">Pool assignments per category — each fighter is shown only for their specific pool slot.</div>
+          <div class="row">
+            <div class="col-md-5 mb-3">
+              <label for="country_filter" class="form-label">🌎 Country</label>
+              <input type="text" class="form-control" id="country_filter" name="country_filter" placeholder="SUI" value="SUI" maxlength="3" />
+            </div>
+            <div class="col-md-7 mb-3">
+              <label for="club_filter" class="form-label">🏠 Club <span class="text-muted fw-normal">optional</span></label>
+              <input type="text" class="form-control" id="club_filter" name="club_filter" placeholder="e.g. nippon" />
+            </div>
           </div>
         </div>
 
-        {# ---- TAB: Fight Cards ---- #}
-        <div class="tab-section" id="tab-ringcards">
-
-          <div class="mb-3">
-            <label for="ring_schedule" class="form-label">🥊 Fight-Card Schedule PDF</label>
-            <input type="file" class="form-control" id="ring_schedule" name="ring_schedule" accept=".pdf" />
-            <div class="form-text">Fight-card schedule PDF with named fighters per fight.</div>
+        <!-- STEP 2 -->
+        <div class="wizard-step" id="step-2">
+          <div class="step-number">2</div>
+          <h5 class="mb-3 fw-bold text-dark">Generation Mode</h5>
+          
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <div class="mode-select" data-mode="schedule" tabindex="0">
+                <div style="font-size:2rem">🗓️</div>
+                <h4>Categories</h4>
+                <p>Timetable matched per category</p>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="mode-select" data-mode="ringcards" tabindex="0">
+                <div style="font-size:2rem">🥊</div>
+                <h4>Fight Cards</h4>
+                <p>Track distinct chronological fights</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {# ---- Single submit button, always red, always in the same spot ---- #}
-        <button type="submit" class="btn btn-primary w-100 py-2 fs-5 mt-1" id="submit-btn">
-          Generate Timetable →
-        </button>
+        <!-- STEP 3 -->
+        <div class="wizard-step" id="step-3">
+          <div class="step-number">3</div>
+          <h5 class="mb-3 fw-bold text-dark">Upload Schedule Data</h5>
 
-        <div id="loading" class="text-center mt-3" style="display:none">
-          <div class="spinner-border text-danger" role="status"></div>
-          <p class="text-muted small mt-2 mb-0">Parsing files… this can take up to a minute.</p>
+          <div id="inputs-schedule" style="display:none;">
+            <div class="mb-3">
+              <label for="schedule" class="form-label">🗓️ Category Schedule <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="schedule" name="schedule" accept=".pdf,.html,.htm" />
+              <div class="form-text">PDF or standard HTML page.</div>
+            </div>
+            <div class="mb-3">
+              <label for="draws" class="form-label">🎲 Draws PDF <span class="text-muted fw-normal">optional</span></label>
+              <input type="file" class="form-control" id="draws" name="draws" accept=".pdf" />
+              <div class="form-text">Pool allocations mapping.</div>
+            </div>
+          </div>
+
+          <div id="inputs-ringcards" style="display:none;">
+            <div class="mb-3">
+              <label for="ring_schedule" class="form-label">🥊 Fight-Card PDF <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="ring_schedule" name="ring_schedule" accept=".pdf" />
+              <div class="form-text">Fight-card schedule PDF with named fighters.</div>
+            </div>
+          </div>
+
+          <div class="mb-4 mt-4">
+            <label for="cache_name" class="form-label text-muted small mb-1">💾 Save generated output as <span class="fw-normal">optional</span></label>
+            <input type="text" class="form-control form-control-sm border border-secondary border-opacity-25" id="cache_name" name="cache_name" placeholder="{{ default_name }}" />
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-3 fs-5 mt-2 shadow-sm rounded-3 fw-bold" id="submit-btn" disabled>
+            Generate Timetable →
+          </button>
+
+          <div id="loading" class="text-center mt-3" style="display:none">
+            <div class="spinner-border text-danger" role="status"></div>
+            <p class="text-muted small mt-2 mb-0">Parsing files… this can take up to a minute.</p>
+          </div>
+
         </div>
 
       </form>
-
-
     </div>
   </div>
-
-
 
   {% if caches %}
   <div style="max-width:540px;margin:0 auto 2.5rem">
     <h6 class="text-muted mb-2">💾 Saved results</h6>
-    <div class="list-group shadow-sm">
+    <div class="list-group shadow-sm border-0 rounded-3">
       {% for c in caches %}
-      <div class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3">
+      <div class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2 px-3 border-0 border-bottom border-light">
         {% if c.type == 'ring-cards' %}
         <a href="/ring-cache/{{ c.slug }}" class="flex-grow-1 text-decoration-none text-dark">
         {% else %}
@@ -160,7 +217,7 @@
         </a>
         <form method="post" action="/cache/{{ c.slug }}/delete" class="mb-0"
               onsubmit="return confirm('Delete saved result &quot;{{ c.name }}&quot;?')">
-          <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Delete">✕</button>
+          <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2 border-0" title="Delete">✕</button>
         </form>
       </div>
       {% endfor %}
@@ -172,51 +229,88 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 <script>
-  const form      = document.getElementById('main-form');
-  const tabs      = document.querySelectorAll('#mode-tabs .nav-link');
-  const sections  = document.querySelectorAll('.tab-section');
-  const schedInput  = document.getElementById('schedule');
-  const ringInput   = document.getElementById('ring_schedule');
-  const submitBtn   = document.getElementById('submit-btn');
-  const cacheInput  = document.getElementById('cache_name');
-  const defaultBase = '{{ default_name }}';
+  const fileReg      = document.getElementById('registrations');
+  const step2        = document.getElementById('step-2');
+  const step3        = document.getElementById('step-3');
+  const modeSelects  = document.querySelectorAll('.mode-select');
+  const inputsSched  = document.getElementById('inputs-schedule');
+  const inputsRing   = document.getElementById('inputs-ringcards');
+  const fileSched    = document.getElementById('schedule');
+  const fileRing     = document.getElementById('ring_schedule');
+  const submitBtn    = document.getElementById('submit-btn');
+  const form         = document.getElementById('main-form');
+  const cacheInput   = document.getElementById('cache_name');
+  const defaultBase  = '{{ default_name }}';
 
-  const ACTIONS = {
-    schedule:  '/process',
-    ringcards: '/ring-cards',
-  };
+  // Step 1 logic: File chosen unlocks Step 2
+  fileReg.addEventListener('change', () => {
+    if (fileReg.files.length > 0) {
+      step2.classList.add('active');
+    } else {
+      step2.classList.remove('active');
+      step3.classList.remove('active');
+      modeSelects.forEach(m => m.classList.remove('selected'));
+      checkSubmit();
+    }
+  });
 
-  const LABELS = {
-    schedule:  'Generate Timetable →',
-    ringcards: 'Generate Fight Cards →',
-  };
+  // Step 2 logic: Choose mode
+  let currentMode = null;
+  modeSelects.forEach(el => {
+    el.addEventListener('click', () => {
+      // Must have step 2 active
+      if (!step2.classList.contains('active')) return;
 
-  const SUFFIXES = {
-    schedule:  '_categories',
-    ringcards: '_fightcards',
-  };
+      // Unselect all
+      modeSelects.forEach(m => m.classList.remove('selected'));
+      // Select chosen
+      el.classList.add('selected');
+      currentMode = el.dataset.mode;
+      
+      // Unlock Step 3
+      step3.classList.add('active');
+      
+      // Toggle inputs
+      if (currentMode === 'schedule') {
+        inputsSched.style.display = 'block';
+        inputsRing.style.display  = 'none';
+        fileSched.required = true;
+        fileRing.required  = false;
+        form.action = '/process';
+        submitBtn.textContent = 'Generate Category Schedule →';
+        cacheInput.placeholder = defaultBase + '_categories';
+      } else {
+        inputsSched.style.display = 'none';
+        inputsRing.style.display  = 'block';
+        fileSched.required = false;
+        fileRing.required  = true;
+        form.action = '/ring-cards';
+        submitBtn.textContent = 'Generate Fight Cards →';
+        cacheInput.placeholder = defaultBase + '_fightcards';
+      }
+      
+      checkSubmit();
+      
+      // Scroll down
+      setTimeout(() => step3.scrollIntoView({behavior: 'smooth', block: 'center'}), 100);
+    });
+  });
 
-  function switchTab(tab) {
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    sections.forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
-    form.action = ACTIONS[tab];
-    submitBtn.textContent = LABELS[tab];
-    cacheInput.placeholder = defaultBase + SUFFIXES[tab];
-
-    // Manage required so inactive tab never blocks submission
-    schedInput.required = (tab === 'schedule');
-    ringInput.required  = (tab === 'ringcards');
+  // Step 3 logic: Check file uploads before enabling generate button
+  function checkSubmit() {
+    let ready = false;
+    if (currentMode === 'schedule' && fileSched.files.length > 0 && fileReg.files.length > 0) ready = true;
+    if (currentMode === 'ringcards' && fileRing.files.length > 0 && fileReg.files.length > 0) ready = true;
+    submitBtn.disabled = !ready;
   }
 
-  tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+  fileSched.addEventListener('change', checkSubmit);
+  fileRing.addEventListener('change', checkSubmit);
 
-  // Initialise
-  switchTab('schedule');
-
-  // Loading spinner on submit
+  // Loading indicator
   form.addEventListener('submit', function() {
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Parsing…';
+    submitBtn.textContent = 'Parsing data...';
     document.getElementById('loading').style.display = 'block';
   });
 </script>

@@ -33,16 +33,16 @@ SWISS_NAMES   = {'switzerland', 'schweiz', 'suisse', 'svizzera'}
 def extract_fighters(pdf_path: str) -> list[dict]:
     """Return ALL fighters from the registrations PDF."""
     lines = _extract_lines(pdf_path)
-    return _parse_lines(lines, swiss_only=False)
+    return _parse_lines(lines, country_filter=None)
 
 
-def get_swiss_fighters(pdf_path: str) -> list[dict]:
-    """Return Swiss fighters only, deduplicated by (name, category_code).
+def get_fighters(pdf_path: str, country_filter: str = 'SUI') -> list[dict]:
+    """Return fighters from the given country, deduplicated by (name, category_code).
     When duplicates exist, prefer the entry that has club data.
     A second pass fills empty clubs from other categories of the same fighter.
     """
     lines = _extract_lines(pdf_path)
-    fighters = _parse_lines(lines, swiss_only=True)
+    fighters = _parse_lines(lines, country_filter=country_filter)
 
     # Merge duplicates per (name, category): keep best club (non-empty wins)
     best: dict[tuple, dict] = {}
@@ -73,7 +73,7 @@ def _extract_lines(pdf_path: str) -> list[str]:
     return lines
 
 
-def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
+def _parse_lines(lines: list[str], country_filter: str | None) -> list[dict]:
     fighters = []
     n = len(lines)
     current_country = ''   # carries forward from the last seen country header
@@ -114,7 +114,7 @@ def _parse_lines(lines: list[str], swiss_only: bool) -> list[dict]:
         if not country:
             country = current_country
 
-        if swiss_only and country not in SWISS_ABBREVS:
+        if country_filter and country != country_filter:
             continue
 
         # --- Use WAKO club-code as anchor to split club / name ---
@@ -165,8 +165,8 @@ def _prev_club_text(line: str) -> str:
     if not stripped:
         return ''
     # If what remains is just a known country name, skip it.
-    if stripped.upper() in SWISS_NAMES | {
-        'SWITZERLAND', 'AUSTRIA', 'GERMANY', 'FRANCE', 'ITALY', 'HUNGARY',
+    if stripped.lower() in SWISS_NAMES or stripped.upper() in {
+        'AUSTRIA', 'GERMANY', 'FRANCE', 'ITALY', 'HUNGARY',
         'SLOVAKIA', 'CZECH', 'POLAND', 'SPAIN', 'CROATIA', 'SERBIA',
         'ROMANIA', 'BULGARIA', 'UKRAINE',
     }:
