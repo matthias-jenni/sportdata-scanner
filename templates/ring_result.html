@@ -194,7 +194,7 @@
     {{ cards|length }} fight{% if cards|length != 1 %}s{% endif %} found
     &nbsp;·&nbsp; {{ swiss_count }} fighter{% if swiss_count != 1 %}s{% endif %} registered
     {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">🏠 {{ club_filter }}</span>{% endif %}
-    {% if cache_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">💾 {{ cache_name }}</span>{% endif %}
+    {% if event_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">💾 {{ event_name }}</span>{% endif %}
     &nbsp;·&nbsp; <span style="opacity:.6;font-size:.82em">{{ total_fights }} total ring fights</span>
   </p>
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
@@ -203,7 +203,7 @@
 </div>
 
 <div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
-  <a href="/" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
+  <button onclick="history.back()" class="btn btn-outline-secondary btn-sm back-btn">← Back</button>
   <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">🖨 Print</button>
   <button onclick="expandAll()" class="btn btn-outline-secondary btn-sm">⬇ Expand all</button>
   <button onclick="collapseAll()" class="btn btn-outline-secondary btn-sm">⬆ Collapse all</button>

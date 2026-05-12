@@ -8,3 +8,4 @@ venv/
 instance/
 cache/
 .DS_Store
+data/

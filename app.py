@@ -157,209 +157,155 @@ def _match(fighters: list[dict], schedule: list[dict], draws: dict | None = None
 # --- routes ----------------------------------------------------------------
 
 
+from utils import storage as _storage
+
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", caches=_cache.list_all(), default_name=_cache.default_name())
+    events = _storage.get_events()
+    return render_template("index.html", events=events)
 
-
-@app.route("/debug", methods=["POST"])
-def debug():
-    """Upload both PDFs and get raw JSON output from both parsers."""
-    import json, tempfile, pathlib
-    reg_file = request.files.get("registrations")
-    sched_file = request.files.get("schedule")
-    if not reg_file or not sched_file:
-        return "Upload both files", 400
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = pathlib.Path(tmp)
-        reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
-        sched_ext = _re.sub(r'.*\.', '.', sched_file.filename.lower()) or '.pdf'
-        reg_path = tmp / f"registrations{reg_ext}"
-        sched_path = tmp / f"schedule{sched_ext}"
-        reg_file.save(str(reg_path))
-        sched_file.save(str(sched_path))
-        from utils.parse_registrations import extract_fighters, get_fighters
-        # For debug, always try PDF extractor; HTML path still shows country fighters
-        ext = reg_path.suffix.lower()
+@app.route("/events/new", methods=["GET", "POST"])
+def new_event():
+    if request.method == "POST":
+        name = request.form.get("event_name", "").strip()
+        reg_file = request.files.get("registrations")
         
-        country_filter = request.form.get("country_filter", "SUI").strip()
-        
-        if ext in ('.html', '.htm'):
-            all_fighters = get_fighters_html(str(reg_path), country_filter)
-        else:
-            all_fighters = extract_fighters(str(reg_path))
-        swiss = _load_fighters(str(reg_path), country_filter)
-        schedule = _load_schedule(str(sched_path))
-    result = {
-        "registrations_total": len(all_fighters),
-        "registrations_sample": all_fighters[:20],
-        "swiss_fighters": swiss,
-        "schedule_total": len(schedule),
-        "schedule_sample": schedule[:30],
-    }
-    return app.response_class(
-        json.dumps(result, indent=2, ensure_ascii=False),
-        mimetype="application/json",
-    )
+        if not name:
+            flash("Event name is required.", "error")
+            return redirect(url_for("new_event"))
+        if not reg_file or not reg_file.filename:
+            flash("Please upload the registrations PDF/HTML.", "error")
+            return redirect(url_for("new_event"))
+            
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = pathlib.Path(tmp)
+            ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
+            reg_path = tmp / f"registrations{ext}"
+            reg_file.save(str(reg_path))
+            
+            try:
+                # Load all fighters (empty filter)
+                all_fighters = _load_fighters(str(reg_path), "")
+                event_id = _storage.create_event(name, all_fighters, filename=reg_file.filename)
+                flash("Event created successfully.", "success")
+                return redirect(url_for("event_admin", event_id=event_id))
+            except Exception as e:
+                flash(f"Error processing files: {str(e)}", "error")
+                return redirect(url_for("new_event"))
+                
+    return render_template("event_new.html")
 
-
-@app.route("/process", methods=["POST"])
-def process():
-    reg_file = request.files.get("registrations")
-    sched_file = request.files.get("schedule")
-
-    if not reg_file or reg_file.filename == "":
-        flash("Please upload the registrations PDF.", "error")
+@app.route("/events/<event_id>", methods=["GET"])
+def event_admin(event_id):
+    event = _storage.get_event(event_id)
+    if not event:
+        flash("Event not found.", "error")
         return redirect(url_for("index"))
-    if not sched_file or sched_file.filename == "":
-            flash("Please upload the schedule PDF or HTML.", "error")
+    return render_template("event_admin.html", event=event)
 
+@app.route("/events/<event_id>/upload-day", methods=["POST"])
+def upload_day(event_id):
+    event = _storage.get_event(event_id)
+    if not event:
+        return "Event not found", 404
+        
+    day_name = request.form.get("day_name", "").strip()
+    day_type = request.form.get("day_type", "categories")
+    sched_file = request.files.get("schedule")
+    draws_file = request.files.get("draws")  # only for categories
+    
+    if not day_name:
+        flash("Day name is required.", "error")
+        return redirect(url_for("event_admin", event_id=event_id))
+    if not sched_file or not sched_file.filename:
+        flash("Please upload the schedule/ring PDF.", "error")
+        return redirect(url_for("event_admin", event_id=event_id))
+        
     import tempfile, pathlib
-
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmp = pathlib.Path(tmp)
-            reg_ext = _re.sub(r'.*\.', '.', reg_file.filename.lower()) or '.pdf'
-            sched_ext = _re.sub(r'.*\.', '.', sched_file.filename.lower()) or '.pdf'
-            reg_path = tmp / f"registrations{reg_ext}"
-            sched_path = tmp / f"schedule{sched_ext}"
-            reg_file.save(str(reg_path))
+            ext = _re.sub(r'.*\.', '.', sched_file.filename.lower()) or '.pdf'
+            sched_path = tmp / f"schedule{ext}"
             sched_file.save(str(sched_path))
-
-            draws_file = request.files.get("draws")
-            draws = {}
-            if draws_file and draws_file.filename:
-                draws_path = tmp / "draws.pdf"
+            
+            raw_draws = None
+            if day_type == "categories" and draws_file and draws_file.filename:
+                extd = _re.sub(r'.*\.', '.', draws_file.filename.lower()) or '.pdf'
+                draws_path = tmp / f"draws{extd}"
                 draws_file.save(str(draws_path))
-                draws = extract_draws(str(draws_path))
+                raw_draws = extract_draws(str(draws_path))
+                
+            if day_type == "categories":
+                schedule = _load_schedule(str(sched_path))
+                _storage.add_event_day(event_id, day_name, day_type, rows=schedule, raw_draws=raw_draws)
+            elif day_type == "ring-cards":
+                from utils.parse_ring_schedule import extract_ring_fights
+                ring_fights = extract_ring_fights(str(sched_path))
+                _storage.add_event_day(event_id, day_name, day_type, rows=ring_fights)
+                
+            flash(f"Day '{day_name}' uploaded successfully.", "success")
+            return redirect(url_for("event_admin", event_id=event_id))
+    except Exception as e:
+        flash(f"Error processing schedule: {str(e)}", "error")
+        return redirect(url_for("event_admin", event_id=event_id))
 
-            country_filter = request.form.get("country_filter", "SUI").strip()
-            swiss_fighters = _load_fighters(str(reg_path), country_filter)
-
-            # Record the typed club as the default filter for this cache entry;
-            # actual filtering is client-side so all rows are stored.
-            club_filter = request.form.get('club_filter', '').strip()
-            schedule = _load_schedule(str(sched_path))
-            rows = _match(swiss_fighters, schedule, draws)
-
-        if not swiss_fighters:
-            flash(f"No fighters found for country '{country_filter}' in the registrations PDF. "
-                  "Check that the file is correct and that the country column "
-                  "matches the filter.", "warning")
-
-        # ---- persist to cache -----------------------------------------------
-        cache_name = (request.form.get("cache_name", "").strip() or _cache.default_name()) + "_categories"
-        slug = _cache.save(
-            name=cache_name,
-            rows=rows,
-            fighter_list=swiss_fighters,
-            swiss_count=len(swiss_fighters),
-            draws_used=bool(draws),
-            club_filter=club_filter,
-        )
-        # -----------------------------------------------------------------------
-
-        return redirect(url_for("load_cache", slug=slug))
-
-    except Exception:
-        flash(f"Error processing PDFs: {traceback.format_exc()}", "error")
+@app.route("/share/<event_id>", methods=["GET"])
+def event_public(event_id):
+    event = _storage.get_event(event_id)
+    if not event:
+        flash("Event not found.", "error")
         return redirect(url_for("index"))
+    return render_template("event_public.html", event=event)
 
-
-@app.route("/cache/<slug>", methods=["GET"])
-def load_cache(slug):
-    entry = _cache.load(slug)
-    if entry is None:
-        flash(f"Cache '{slug}' not found.", "error")
-        return redirect(url_for("index"))
-    # ?club= query param overrides the saved default filter
-    club_filter = request.args.get('club', entry.get('club_filter', ''))
-    return render_template(
-        "result.html",
-        rows=entry["rows"],
-        swiss_count=entry["swiss_count"],
-        fighter_list=entry["fighter_list"],
-        draws_used=entry["draws_used"],
-        cache_name=entry["name"],
-        cache_slug=slug,
-        cache_created=entry.get("created", ""),
-        club_filter=club_filter,
-    )
-
-
-@app.route("/cache/<slug>/delete", methods=["POST"])
-def delete_cache(slug):
-    _cache.delete(slug)
-    flash(f"Cache deleted.", "success")
-    return redirect(url_for("index"))
-
-
-@app.route("/ring-cards", methods=["POST"])
-def ring_cards():
-    """Upload registrations + ring-schedule PDF → show fight cards for Swiss fighters."""
-    from utils.parse_ring_schedule import extract_ring_fights, find_swiss_fights
-    import tempfile, pathlib
-
-    reg_file   = request.files.get("registrations")
-    ring_file  = request.files.get("ring_schedule")
-
-    if not reg_file or reg_file.filename == "":
-        flash("Please upload the registrations file.", "error")
-        return redirect(url_for("index"))
-    if not ring_file or ring_file.filename == "":
-        flash("Please upload the ring-schedule PDF.", "error")
-        return redirect(url_for("index"))
-
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = pathlib.Path(tmp)
-            reg_ext  = _re.sub(r".*\.", ".", reg_file.filename.lower()) or ".pdf"
-            reg_path = tmp / f"registrations{reg_ext}"
-            ring_path = tmp / "ring-schedule.pdf"
-            reg_file.save(str(reg_path))
-            ring_file.save(str(ring_path))
-
-            country_filter = request.form.get("country_filter", "SUI").strip()
-            swiss_fighters = _load_fighters(str(reg_path), country_filter)
-            ring_fights    = extract_ring_fights(str(ring_path))
-
-        club_filter = request.form.get("club_filter", "").strip()
-        cards = find_swiss_fights(ring_fights, swiss_fighters, club_filter)
-
-        cache_name = (request.form.get("cache_name", "").strip() or _cache.default_name()) + "_fightcards"
-        slug = _cache.save(
-            name=cache_name,
-            rows=cards,
-            fighter_list=swiss_fighters,
-            swiss_count=len(swiss_fighters),
-            draws_used=False,
-            club_filter=club_filter,
-            type="ring-cards",
-        )
-
-        return redirect(url_for("load_ring_cache", slug=slug))
-    except Exception:
-        flash(f"Error processing files: {traceback.format_exc()}", "error")
-        return redirect(url_for("index"))
-
-
-@app.route("/ring-cache/<slug>", methods=["GET"])
-def load_ring_cache(slug):
-    entry = _cache.load(slug)
-    if entry is None or entry.get("type") != "ring-cards":
-        flash(f"Fight-cards cache '{slug}' not found.", "error")
-        return redirect(url_for("index"))
-    return render_template(
-        "ring_result.html",
-        cards=entry["rows"],
-        swiss_count=entry["swiss_count"],
-        club_filter=entry.get("club_filter", ""),
-        total_fights=len(entry["rows"]),
-        cache_name=entry["name"],
-        cache_slug=slug,
-        cache_created=entry.get("created", ""),
-    )
-
+@app.route("/share/<event_id>/day/<day_id>", methods=["GET"])
+def share_day(event_id, day_id):
+    event = _storage.get_event(event_id)
+    day = _storage.get_event_day(event_id, day_id)
+    if not event or not day:
+        return "Event or Day not found", 404
+        
+    country_filter = request.args.get("country", "").strip()
+    club_filter = request.args.get("club", "").strip()
+    
+    all_fighters = _storage.get_event_registrations(event_id)
+    team_fighters = []
+    for f in all_fighters:
+        if country_filter and country_filter.lower() not in f.get("country", "").lower():
+            continue
+        if club_filter and club_filter.lower() not in f.get("club", "").lower():
+            continue
+        team_fighters.append(f)
+        
+    day_type = day.get("type", "categories")
+    
+    if day_type == "categories":
+        draws = day.get("raw_draws")
+        schedule = day.get("rows", [])
+        matched = _match(team_fighters, schedule, draws)
+        return render_template("result.html", 
+                               rows=matched, 
+                               swiss_count=len(team_fighters), 
+                               fighter_list=team_fighters,
+                               draws_used=bool(draws),
+                               event_name=event["name"],
+                               day_name=day["name"],
+                               club_filter=club_filter,
+                               country_filter=country_filter)
+                               
+    elif day_type == "ring-cards":
+        ring_fights = day.get("rows", [])
+        from utils.parse_ring_schedule import find_swiss_fights
+        matched = find_swiss_fights(ring_fights, team_fighters, "")
+        return render_template("ring_result.html",
+                               cards=matched,
+                               swiss_count=len(team_fighters),
+                               total_fights=len(matched),
+                               event_name=event["name"],
+                               day_name=day["name"],
+                               club_filter=club_filter,
+                               country_filter=country_filter)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
