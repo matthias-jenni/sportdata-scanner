@@ -158,6 +158,12 @@ def _match(fighters: list[dict], schedule: list[dict], draws: dict | None = None
 
 
 from utils import storage as _storage
+from flask import send_from_directory
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.svg', mimetype='image/svg+xml')
 
 @app.route("/", methods=["GET"])
 def index():
