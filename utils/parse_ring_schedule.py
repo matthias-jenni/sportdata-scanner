@@ -22,7 +22,7 @@ import pdfplumber
 
 _TIME_RE     = re.compile(r"(\d{1,2}:\d{2})\s*[-\u2013]\s*(\d{1,2}:\d{2})")
 _RING_RE     = re.compile(r"ring\s*(\d+)", re.IGNORECASE)
-_CAT_RE      = re.compile(r"^\d+\s+[A-Z]{2}\s+\d+", re.IGNORECASE)
+_CAT_RE      = re.compile(r"^\d+\s+[A-Z0-9]{2}\s+\d+", re.IGNORECASE)
 _FIGHT_NO_RE = re.compile(r"^#(\d+)\s+(.+)")
 # A complete fighter entry ends with (CLUB,CC) where CC = 2-3 upper-case letters
 _COUNTRY_END_RE = re.compile(r",([A-Z]{2,3})\)\s*$")
@@ -30,14 +30,108 @@ _COUNTRY_END_RE = re.compile(r",([A-Z]{2,3})\)\s*$")
 FIGHT_DURATION_MIN = 12
 
 
+
+
+
+_DAILY_FIGHT_RE = re.compile(
+    r'^(\d+)\s+(\d+)\s+([\w/]+)\s+([\dA-Z\-\+,]+)\s+RED\s+(.+?)\s+([A-Z]{3})\s*\nBLUE\s*(.*?)(?:\s+([A-Z]{3}))?$'
+)
+
+def _split_camel(name: str) -> str:
+    # "KarakusMehmetGokturk" -> "Karakus Mehmet Gokturk"
+    return re.sub(r'([a-z])([A-Z])', r'\1 \2', name).replace('_', ' ')
+
 def extract_ring_fights(pdf_path: str) -> list[dict]:
     """Return all fight cards parsed from the ring-schedule PDF."""
     fights: list[dict] = []
     with pdfplumber.open(pdf_path) as pdf:
+        if not pdf.pages:
+            return fights
+            
+        first_page_text = pdf.pages[0].extract_text()
+        if first_page_text and "DailySchedule" in first_page_text:
+            return _parse_daily_schedule(pdf)
+            
         for page in pdf.pages:
             _parse_page(page, fights)
+            
     return fights
 
+def _parse_daily_schedule(pdf) -> list[dict]:
+    fights = []
+    for page in pdf.pages:
+        text = page.extract_text()
+        
+        ring_m = re.search(r'SESSION \d+ (R\d+)', text)
+        time_m = re.search(r'\d{4}-\d{2}-\d{2}\s*(\d{2}:\d{2})', text)
+        
+        if ring_m:
+            current_ring = f"Ring {ring_m.group(1)[1:].zfill(2)}"
+        else:
+            current_ring = "Ring 01"
+            
+        ring_start = None
+        if time_m:
+            try:
+                ring_start = datetime.strptime(time_m.group(1), "%H:%M")
+            except ValueError:
+                pass
+                
+        tables = page.extract_tables()
+        if not tables:
+            continue
+            
+        for row in tables[0]:
+            cell = row[0] if row else ""
+            if not cell:
+                continue
+                
+            m = _DAILY_FIGHT_RE.match(cell)
+            if not m:
+                continue
+                
+            seq_no = int(m.group(1))
+            fight_no = int(m.group(2))
+            phase = m.group(3)
+            category_code = m.group(4)
+            f1_name_raw = m.group(5).strip()
+            f1_country = m.group(6).strip()
+            f2_name_raw = m.group(7).strip()
+            f2_country = m.group(8) or ""
+            
+            f1_name = _split_camel(f1_name_raw).upper()
+            f2_name = _split_camel(f2_name_raw).upper() if f2_name_raw else ""
+            
+            time_str = ""
+            time_end_str = ""
+            if ring_start:
+                est = ring_start + timedelta(minutes=(seq_no - 1) * FIGHT_DURATION_MIN)
+                time_str = est.strftime("%H:%M")
+                time_end_str = (est + timedelta(minutes=FIGHT_DURATION_MIN)).strftime("%H:%M")
+            
+            fights.append({
+                "ring": current_ring,
+                "time": time_str,
+                "time_end": time_end_str,
+                "time_estimated": bool(ring_start),
+                "seq_no": seq_no,
+                "fight_no": fight_no,
+                "category_code": category_code,
+                "phase": phase,
+                "fighter1": {
+                    "name": f1_name,
+                    "club": "",
+                    "country": f1_country,
+                    "color": "red"
+                },
+                "fighter2": {
+                    "name": f2_name,
+                    "club": "",
+                    "country": f2_country,
+                    "color": "blue"
+                }
+            })
+    return fights
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -267,7 +361,7 @@ def _name_matches(norm_name: str, target_names: set[str]) -> bool:
         return True
     tokens_q = set(norm_name.split())
     for t in target_names:
-        if t in norm_name or norm_name in t:
+        if (t and t in norm_name) or (norm_name and norm_name in t):
             return True
         tokens_t = set(t.split())
         shorter = tokens_q if len(tokens_q) <= len(tokens_t) else tokens_t

@@ -249,6 +249,7 @@ def upload_day(event_id):
             elif day_type == "ring-cards":
                 from utils.parse_ring_schedule import extract_ring_fights
                 ring_fights = extract_ring_fights(str(sched_path))
+                print("Extracted fights:", len(ring_fights))
                 _storage.add_event_day(event_id, day_name, day_type, rows=ring_fights)
                 
             flash(f"Day '{day_name}' uploaded successfully.", "success")
