@@ -137,7 +137,6 @@
     .fighter-country { font-size: .7rem;  color: #888; }
 
     .our-fighter { background: rgba(255,215,0,.13) !important; }
-    .our-fighter .fighter-name::after { content: ' 🇨🇭'; font-size: .8em; }
 
     /* Search */
     .search-bar input {
@@ -203,7 +202,7 @@
 </div>
 
 <div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
-  <button onclick="history.back()" class="btn btn-outline-secondary btn-sm back-btn">← Back</button>
+  <a href="{{ url_for('event_public', event_id=event_id) }}" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
   <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">🖨 Print</button>
   <button onclick="expandAll()" class="btn btn-outline-secondary btn-sm">⬇ Expand all</button>
   <button onclick="collapseAll()" class="btn btn-outline-secondary btn-sm">⬆ Collapse all</button>
@@ -221,15 +220,19 @@
   {% for c in cards %}
 
   {# Determine which name(s) to show in the summary row #}
+  {% set our_flag = "" %}
   {% if c.our_color == 'red' %}
     {% set our_name = c.fighter1.name %}
     {% set our_class = 'our-name-red' %}
+    {% set our_flag = c.fighter1.country|flag if c.fighter1.country else "" %}
   {% elif c.our_color == 'blue' %}
     {% set our_name = c.fighter2.name %}
     {% set our_class = 'our-name-blue' %}
+    {% set our_flag = c.fighter2.country|flag if c.fighter2.country else "" %}
   {% else %}
     {% set our_name = c.fighter1.name ~ ' & ' ~ c.fighter2.name %}
     {% set our_class = 'our-name-both' %}
+    {% set our_flag = (c.fighter1.country|flag if c.fighter1.country else "") ~ (" " ~ c.fighter2.country|flag if c.fighter2.country and c.fighter2.country != c.fighter1.country else "") %}
   {% endif %}
 
   <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
@@ -252,7 +255,7 @@
 
       <!-- 2. Name -->
       <div class="col-name">
-        <span class="our-name {{ our_class }}">{{ our_name }}</span>
+        <span class="our-name {{ our_class }}">{{ our_name }} {% if our_flag %}<span style="font-size: .8em">{{ our_flag }}</span>{% endif %}</span>
       </div>
 
       <!-- 3. Ring no. -->
@@ -277,14 +280,14 @@
 
         <div class="corner corner-red{% if c.our_color in ('red','both') %} our-fighter{% endif %}">
           <div class="corner-label">🔴 Red Corner</div>
-          <div class="fighter-name">{{ c.fighter1.name }}</div>
+          <div class="fighter-name">{{ c.fighter1.name }} {% if c.our_color in ('red','both') and c.fighter1.country %}<span style="font-size: .8em">{{ c.fighter1.country|flag }}</span>{% endif %}</div>
           {% if c.fighter1.club %}<div class="fighter-club">{{ c.fighter1.club }}</div>{% endif %}
           {% if c.fighter1.country %}<div class="fighter-country">{{ c.fighter1.country }}</div>{% endif %}
         </div>
 
         <div class="corner corner-blue{% if c.our_color in ('blue','both') %} our-fighter{% endif %}">
           <div class="corner-label">🔵 Blue Corner</div>
-          <div class="fighter-name">{{ c.fighter2.name }}</div>
+          <div class="fighter-name">{{ c.fighter2.name }} {% if c.our_color in ('blue','both') and c.fighter2.country %}<span style="font-size: .8em">{{ c.fighter2.country|flag }}</span>{% endif %}</div>
           {% if c.fighter2.club %}<div class="fighter-club">{{ c.fighter2.club }}</div>{% endif %}
           {% if c.fighter2.country %}<div class="fighter-country">{{ c.fighter2.country }}</div>{% endif %}
         </div>

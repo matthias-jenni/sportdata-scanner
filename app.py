@@ -23,6 +23,7 @@ from utils.parse_registrations_html import get_fighters_html
 from utils.parse_schedule import extract_schedule
 from utils.parse_schedule_html import extract_schedule_html
 from utils.parse_draws import extract_draws, pool_for_fighter
+from utils.flags import get_flag_emoji
 from utils import cache as _cache
 
 
@@ -41,6 +42,10 @@ def _load_schedule(path: str) -> list[dict]:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
+@app.template_filter('flag')
+def flag_filter(country_code):
+    return get_flag_emoji(country_code)
 
 # --- helper ----------------------------------------------------------------
 
@@ -312,6 +317,7 @@ def share_day(event_id, day_id):
                                fighter_list=team_fighters,
                                draws_used=bool(draws),
                                event_name=event["name"],
+                               event_id=event["id"],
                                day_name=day["name"],
                                club_filter=club_filter,
                                country_filter=country_filter)
@@ -325,6 +331,7 @@ def share_day(event_id, day_id):
                                swiss_count=len(team_fighters),
                                total_fights=len(matched),
                                event_name=event["name"],
+                               event_id=event["id"],
                                day_name=day["name"],
                                club_filter=club_filter,
                                country_filter=country_filter)

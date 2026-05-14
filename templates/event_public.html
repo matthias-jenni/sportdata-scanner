@@ -18,6 +18,11 @@
   </div>
   
   <div class="container pb-5">
+    <div style="max-width: 600px; margin: 0 auto;" class="d-flex gap-2 mb-3">
+      <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">&larr; Dashboard</a>
+      <a href="{{ url_for('event_admin', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm">Admin &rarr;</a>
+    </div>
+
     {% if not event.days %}
       <div class="text-center text-muted mt-5">
         <p>No schedules have been published for this event yet.</p>
