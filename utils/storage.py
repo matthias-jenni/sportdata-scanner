@@ -183,3 +183,13 @@ def get_event_day(event_id, day_id):
         with open(day_file, "r") as f:
             return json.load(f)
     return None
+
+def delete_event_day(event_id, day_id):
+    if _sb:
+        _sb.table("event_days").delete().eq("id", day_id).eq("event_id", event_id).execute()
+        return
+
+    # Local fallback
+    day_file = os.path.join(EVENTS_DIR, event_id, "days", f"{day_id}.json")
+    if os.path.exists(day_file):
+        os.remove(day_file)

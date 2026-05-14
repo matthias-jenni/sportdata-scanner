@@ -258,7 +258,22 @@ def upload_day(event_id):
         flash(f"Error processing schedule: {str(e)}", "error")
         return redirect(url_for("event_admin", event_id=event_id))
 
+
+@app.route("/events/<event_id>/days/<day_id>/delete", methods=["POST"])
+def delete_day(event_id, day_id):
+    if not _storage.get_event(event_id):
+        return "Event not found", 404
+        
+    try:
+        _storage.delete_event_day(event_id, day_id)
+        flash("Day deleted successfully.", "success")
+    except Exception as e:
+        flash(f"Error deleting day: {str(e)}", "error")
+        
+    return redirect(url_for("event_admin", event_id=event_id))
+
 @app.route("/share/<event_id>", methods=["GET"])
+
 def event_public(event_id):
     event = _storage.get_event(event_id)
     if not event:

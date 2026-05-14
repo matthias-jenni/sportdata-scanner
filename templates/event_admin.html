@@ -89,7 +89,12 @@
                     <strong>{{ day.name }}</strong><br>
                     <small class="text-muted">{{ day.type }}</small>
                   </div>
-                  <a href="{{ url_for('event_public', event_id=event.id) }}" class="btn btn-sm btn-outline-teal">Share / View</a>
+                  <div>
+                    <a href="{{ url_for('event_public', event_id=event.id) }}" class="btn btn-sm btn-outline-teal">Share / View</a>
+                    <form action="{{ url_for('delete_day', event_id=event.id, day_id=day.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this day?');">
+                      <button type="submit" class="btn btn-sm btn-outline-danger ms-2">Delete</button>
+                    </form>
+                  </div>
                 </li>
               {% endfor %}
             </ul>
