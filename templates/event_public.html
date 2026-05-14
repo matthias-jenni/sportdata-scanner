@@ -28,9 +28,9 @@
         <div class="mb-3">
           <label class="form-label">Select Day / Schedule</label>
           <select id="daySelect" class="form-select" required>
-            <option value="" disabled selected>Choose a schedule...</option>
+            <option value="" disabled {% if not request.args.get('day_id') %}selected{% endif %}>Choose a schedule...</option>
             {% for day in event.days %}
-              <option value="{{ day.id }}">{{ day.name }} ({{ day.type }})</option>
+              <option value="{{ day.id }}" {% if request.args.get('day_id') == day.id %}selected{% endif %}>{{ day.name }} ({{ day.type }})</option>
             {% endfor %}
           </select>
         </div>
