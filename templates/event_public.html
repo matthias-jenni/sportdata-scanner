@@ -52,6 +52,13 @@
           <div class="form-text">Leave blank to show all clubs in the selected country.</div>
         </div>
         
+        <div class="mb-4" id="medalsToggleContainer" style="display: none;">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="medalsOnlySwitch" name="medals_only" value="1" checked>
+            <label class="form-check-label" for="medalsOnlySwitch">Only fighters who won at least 1 fight (Top 3 Medals)</label>
+          </div>
+        </div>
+        
         <button type="submit" class="btn w-100 text-white fw-bold py-2" style="background:#0d9488;">Generate Schedule</button>
       </form>
     </div>
@@ -61,6 +68,29 @@
   <script>
     const form = document.getElementById('filterForm');
     const daySelect = document.getElementById('daySelect');
+    const medalsContainer = document.getElementById('medalsToggleContainer');
+    
+    // Day types mapped by option value
+    const dayTypes = {
+      {% for day in event.days %}
+      "{{ day.id }}": "{{ day.type }}",
+      {% endfor %}
+    };
+
+    if (daySelect) {
+      daySelect.addEventListener('change', function() {
+        const type = dayTypes[this.value];
+        if (type === 'results') {
+          medalsContainer.style.display = 'block';
+        } else {
+          medalsContainer.style.display = 'none';
+        }
+      });
+      // Trigger change on load if something is already selected
+      if (daySelect.value) {
+        daySelect.dispatchEvent(new Event('change'));
+      }
+    }
     
     if(form) {
       form.addEventListener('submit', function(e) {
@@ -75,6 +105,16 @@
         const params = new URLSearchParams();
         if(country) params.append('country', country);
         if(club) params.append('club', club);
+        
+        const type = dayTypes[dayId];
+        if (type === 'results') {
+          const medalsOnly = document.getElementById('medalsOnlySwitch').checked;
+          if (medalsOnly) {
+            params.append('medals_only', '1');
+          } else {
+            params.append('medals_only', '0');
+          }
+        }
         
         const qs = params.toString();
         if(qs) {

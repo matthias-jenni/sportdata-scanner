@@ -9,3 +9,4 @@ instance/
 cache/
 .DS_Store
 data/
+test-data/

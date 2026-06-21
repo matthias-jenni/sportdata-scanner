@@ -194,7 +194,7 @@
     &nbsp;·&nbsp; {{ swiss_count }} fighter{% if swiss_count != 1 %}s{% endif %} registered
     {% if club_filter %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">🏠 {{ club_filter }}</span>{% endif %}
     {% if event_name %}&nbsp;<span style="background:rgba(255,255,255,.2);border-radius:.35rem;padding:.1rem .45rem">💾 {{ event_name }}</span>{% endif %}
-    &nbsp;·&nbsp; <span style="opacity:.6;font-size:.82em">{{ total_fights }} total ring fights</span>
+    &nbsp;·&nbsp; <span style="opacity:.6;font-size:.82em">{{ total_fights }} total fight cards</span>
   </p>
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
     {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}All parsed fighters are shown.{% endif %}
@@ -213,7 +213,7 @@
   {% if cards %}
 
   <div class="search-bar">
-    <input type="search" id="card-filter" placeholder="🔍 Filter by name, ring or category…" autocomplete="off" />
+    <input type="search" id="card-filter" placeholder="🔍 Filter by name, ring/tatami or category…" autocomplete="off" />
   </div>
 
   <div id="cards-container">
@@ -310,7 +310,7 @@
   {% else %}
   <div class="no-results">
     <p>No fight cards found for the selected fighters.</p>
-    <p class="small text-muted">Make sure the registrations and ring-schedule files are from the same event.</p>
+    <p class="small text-muted">Make sure the registrations and fight-card files are from the same event.</p>
   </div>
   {% endif %}
 

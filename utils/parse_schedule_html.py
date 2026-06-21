@@ -27,9 +27,9 @@ from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
 
-# Matches a category code: digits, 2-letter discipline, digits
-# e.g. "01 PF 034 OC M -37 kg" or "02 LC 1129 S M -63 kg"
-_CAT_CODE_RE = re.compile(r"\d+\s+[A-Z]{2}\s+\d+", re.IGNORECASE)
+# Matches a category code: digits, 2-char discipline token, digits
+# e.g. "01 PF 034 OC M -37 kg", "07 K1 403 YJ F -56 kg"
+_CAT_CODE_RE = re.compile(r"\d+\s+[A-Z0-9]{2}\s+\d+", re.IGNORECASE)
 
 # Matches "HH:MM - HH:MM" inside cell text
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})")
@@ -43,25 +43,175 @@ def extract_schedule_html(html_path: str) -> list[dict]:
     with open(html_path, encoding="utf-8", errors="replace") as fh:
         soup = BeautifulSoup(fh, "html.parser")
 
+    # New timetable structure used by newer sportdata pages.
+    if _looks_like_new_schedule_html(soup):
+        fights = _extract_schedule_html_new(soup)
+        if fights:
+            return fights
+
+    # Fallback for legacy saved timetable pages.
+    return _extract_schedule_html_legacy(soup)
+
+
+def _looks_like_new_schedule_html(soup: BeautifulSoup) -> bool:
+    table = soup.find("table", class_="schedule")
+    if table is None:
+        return False
+    return table.find("td", class_="time-cell") is not None
+
+
+def _extract_schedule_html_new(soup: BeautifulSoup) -> list[dict]:
+    table = soup.find("table", class_="schedule")
+    if table is None:
+        return []
+
+    fights: list[dict] = []
+    ring_names = _extract_new_ring_names(table)
+
+    if not ring_names:
+        return []
+
+    grid: dict[int, tuple[int, Tag]] = {}
+    current_time: str = ""
+
+    tbody = table.find("tbody")
+    rows = tbody.find_all("tr", recursive=False) if tbody else table.find_all("tr", recursive=False)
+
+    for tr in rows:
+        cells = tr.find_all("td", recursive=False)
+        if not cells:
+            continue
+
+        resolved: dict[int, Tag] = {}
+        new_cols: set[int] = set()
+
+        for col, (remaining, td) in list(grid.items()):
+            resolved[col] = td
+            if remaining <= 1:
+                del grid[col]
+            else:
+                grid[col] = (remaining - 1, td)
+
+        real_col_cursor = 0
+        for cell in cells:
+            while real_col_cursor in resolved:
+                real_col_cursor += 1
+
+            resolved[real_col_cursor] = cell
+            new_cols.add(real_col_cursor)
+
+            rs = int(cell.get("rowspan", 1))
+            if rs > 1:
+                grid[real_col_cursor] = (rs - 1, cell)
+
+            cs = int(cell.get("colspan", 1))
+            real_col_cursor += cs
+
+        time_cell = resolved.get(0)
+        if time_cell is not None:
+            m = _TIME_RE.match(time_cell.get_text(strip=True))
+            if m:
+                current_time = m.group(1)
+
+        if not current_time:
+            continue
+
+        for col_idx, ring_name in ring_names.items():
+            if col_idx not in new_cols:
+                continue
+
+            td = resolved.get(col_idx)
+            if td is None:
+                continue
+
+            category_code = _extract_category_from_new_cell(td)
+            if not category_code:
+                continue
+
+            time_end = _extract_new_time_end(td)
+            fights.append({
+                "time": current_time,
+                "time_end": time_end,
+                "tatami": ring_name,
+                "category_code": category_code,
+                "category_display": category_code,
+                "phase": "",
+                "fight_no": "",
+            })
+
+    fights.sort(key=_sort_key)
+    return fights
+
+
+def _extract_new_ring_names(table: Tag) -> dict[int, str]:
+    ring_names: dict[int, str] = {}
+    thead = table.find("thead")
+    if thead is None:
+        return ring_names
+
+    header_row = thead.find("tr")
+    if header_row is None:
+        return ring_names
+
+    col = 0
+    for cell in header_row.find_all("th", recursive=False):
+        text = cell.get_text(strip=True)
+        cs = int(cell.get("colspan", 1))
+        if col > 0 and text:
+            ring_names[col] = text
+        col += cs
+
+    return ring_names
+
+
+def _extract_category_from_new_cell(td: Tag) -> str:
+    title = td.find("div", class_="match-title")
+    if title is None:
+        return ""
+
+    category = title.get_text(" ", strip=True)
+    if not category:
+        return ""
+    if not _CAT_CODE_RE.search(category):
+        return ""
+    return category
+
+
+def _extract_new_time_end(td: Tag) -> str:
+    info = td.find("div", class_="cell-info")
+    if info is None:
+        return ""
+
+    info_text = info.get_text(" ", strip=True)
+    if not info_text:
+        return ""
+
+    # New format is typically: "MM:SS · HH:MM · HH:MM".
+    parts = [p.strip() for p in info_text.split("·") if p.strip()]
+    if parts:
+        m = _TIME_RE.match(parts[-1])
+        if m:
+            return m.group(1)
+
+    # Fallback when separators vary.
+    times = re.findall(r"\b\d{1,2}:\d{2}\b", info_text)
+    if len(times) >= 2:
+        return times[-1]
+    return ""
+
+
+def _extract_schedule_html_legacy(soup: BeautifulSoup) -> list[dict]:
     table = soup.find("table", class_="moduletable")
     if table is None:
         return []
 
     fights: list[dict] = []
 
-    # ring_names[col_index] = display name, e.g. "Ring 1"
-    # Re-detected each time a ring-header row is found (supports multi-day HTML)
     ring_names: dict[int, str] = {}
-
-    # Virtual grid: tracks how many more rows each column is still occupied by
-    # a rowspan from a previously-seen cell.
-    # grid[col_index] = (remaining_extra_rows, td_element)
     grid: dict[int, tuple[int, Tag]] = {}
-
     current_time: str = ""
 
     rows = table.find_all("tr", recursive=False)
-    # tbody is sometimes present
     if not rows:
         tbody = table.find("tbody")
         if tbody:
@@ -72,9 +222,6 @@ def extract_schedule_html(html_path: str) -> list[dict]:
         if not cells:
             continue
 
-        # ------------------------------------------------------------------ #
-        # 1. Ring-header row detection                                        #
-        # ------------------------------------------------------------------ #
         thcenter_cells = [c for c in cells if c.name == "th" and "thcenter" in c.get("class", [])]
         if thcenter_cells:
             ring_names = {}
@@ -83,33 +230,19 @@ def extract_schedule_html(html_path: str) -> list[dict]:
                 if cell.name == "th" and "thcenter" in cell.get("class", []):
                     ring_names[col] = cell.get_text(strip=True)
                 col += 1
-            # Reset the virtual grid for the new day/section
             grid = {}
             current_time = ""
             continue
 
-        # ------------------------------------------------------------------ #
-        # 2. Date / metadata header rows – skip                               #
-        # ------------------------------------------------------------------ #
         if cells and cells[0].name == "th":
             continue
 
-        # ------------------------------------------------------------------ #
-        # 3. Time + fight rows                                                #
-        # ------------------------------------------------------------------ #
         if not ring_names:
-            # Haven't seen a ring header yet
             continue
 
-        # Build the "resolved" column list by merging real cells with virtual
-        # cells carried over from rowspans in earlier rows.
-        # `resolved[col_index]` = the <td> that owns this column for this row.
-        # `new_cols` = column indices where a brand-new cell appears this row;
-        #   carried-over rowspan cells are excluded so we don't emit duplicates.
         resolved: dict[int, Tag] = {}
         new_cols: set[int] = set()
 
-        # First pass: expose carried-over rowspan cells (not new this row)
         for col, (remaining, td) in list(grid.items()):
             resolved[col] = td
             if remaining <= 1:
@@ -117,16 +250,13 @@ def extract_schedule_html(html_path: str) -> list[dict]:
             else:
                 grid[col] = (remaining - 1, td)
 
-        # Second pass: place actual cells from this row into free columns
         real_col_cursor = 0
         for cell in cells:
-            # Skip to the next free column
             while real_col_cursor in resolved:
                 real_col_cursor += 1
             resolved[real_col_cursor] = cell
-            new_cols.add(real_col_cursor)  # only emit fights for new cells
+            new_cols.add(real_col_cursor)
 
-            # Register rowspan for subsequent rows
             rs = int(cell.get("rowspan", 1))
             if rs > 1:
                 grid[real_col_cursor] = (rs - 1, cell)
@@ -134,7 +264,6 @@ def extract_schedule_html(html_path: str) -> list[dict]:
             cs = int(cell.get("colspan", 1))
             real_col_cursor += cs
 
-        # Column 0 is the time label
         time_cell = resolved.get(0)
         if time_cell is not None:
             m = _TIME_RE.match(time_cell.get_text())
@@ -144,35 +273,30 @@ def extract_schedule_html(html_path: str) -> list[dict]:
         if not current_time:
             continue
 
-        # Columns 1…N are ring slots — only emit for brand-new cells
         for col_idx, ring_name in ring_names.items():
             if col_idx not in new_cols:
-                continue  # carried-over rowspan; already emitted on first row
+                continue
             td = resolved.get(col_idx)
             if td is None:
                 continue
 
             title = (td.get("title") or "").strip()
-            # A fight cell has a title matching a category code pattern
             if not _CAT_CODE_RE.search(title):
                 continue
 
-            # The title IS the category code (sportdata puts the full code there)
             category_code = title
-
-            # Extract time_end from inline text "HH:MM - HH:MM (HH:MM)"
             cell_text = td.get_text(separator=" ")
             tm = _TIME_RANGE_RE.search(cell_text)
             time_end = tm.group(2) if tm else ""
 
             fights.append({
-                "time":             current_time,
-                "time_end":         time_end,
-                "tatami":           ring_name,
-                "category_code":    category_code,
+                "time": current_time,
+                "time_end": time_end,
+                "tatami": ring_name,
+                "category_code": category_code,
                 "category_display": category_code,
-                "phase":            "",
-                "fight_no":         "",
+                "phase": "",
+                "fight_no": "",
             })
 
     fights.sort(key=_sort_key)

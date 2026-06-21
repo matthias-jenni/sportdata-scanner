@@ -58,18 +58,22 @@
               <input type="text" class="form-control" name="day_name" required placeholder="e.g., Saturday Categories">
             </div>
             <div class="mb-3">
-              <label class="form-label d-block">Schedule Type</label>
+              <label class="form-label d-block">Schedule / Data Type</label>
               <div class="btn-group w-100" role="group">
-                <input type="radio" class="btn-check" name="day_type" id="type_categories" value="categories" autocomplete="off" checked onchange="document.getElementById('draws_section').style.opacity='1'; document.getElementById('draws_input').disabled=false;">
+                <input type="radio" class="btn-check" name="day_type" id="type_categories" value="categories" autocomplete="off" checked onchange="document.getElementById('draws_section').style.opacity='1'; document.getElementById('draws_input').disabled=false; updateUploadMode();">
                 <label class="btn btn-outline-teal" for="type_categories">Categorie schedule</label>
 
-                <input type="radio" class="btn-check" name="day_type" id="type_ring" value="ring-cards" autocomplete="off" onchange="document.getElementById('draws_section').style.opacity='0.4'; document.getElementById('draws_input').disabled=true;">
+                <input type="radio" class="btn-check" name="day_type" id="type_ring" value="ring-cards" autocomplete="off" onchange="document.getElementById('draws_section').style.opacity='0.4'; document.getElementById('draws_input').disabled=true; updateUploadMode();">
                 <label class="btn btn-outline-teal" for="type_ring">Fight-cards</label>
+
+                <input type="radio" class="btn-check" name="day_type" id="type_results" value="results" autocomplete="off" onchange="document.getElementById('draws_section').style.opacity='0.4'; document.getElementById('draws_input').disabled=true; let dn=document.querySelector('input[name=\'day_name\']'); if(!dn.value) dn.value='Results'; updateUploadMode();">
+                <label class="btn btn-outline-teal" for="type_results">Results</label>
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label">Schedule PDF/HTML</label>
-              <input type="file" class="form-control" name="schedule" accept=".pdf,.html,.htm,text/html,application/pdf" required>
+              <label class="form-label">Schedule File(s)</label>
+              <input type="file" class="form-control" id="schedule_input" name="schedule" accept=".pdf,.html,.htm,text/html,application/pdf" required>
+              <div class="form-text" id="schedule_help">Upload one schedule file.</div>
             </div>
             <div class="mb-4" id="draws_section" style="transition: opacity 0.3s ease;">
               <label class="form-label">Draws PDF (Optional, for categories)</label>
@@ -108,5 +112,22 @@
       </div>
     </div>
   </div>
+  <script>
+    function updateUploadMode() {
+      const ringMode = document.getElementById('type_ring')?.checked;
+      const scheduleInput = document.getElementById('schedule_input');
+      const scheduleHelp = document.getElementById('schedule_help');
+      if (!scheduleInput || !scheduleHelp) return;
+
+      scheduleInput.multiple = !!ringMode;
+      if (ringMode) {
+        scheduleHelp.textContent = 'You can select multiple files (for example ring-sports + tatami) for one combined day.';
+      } else {
+        scheduleHelp.textContent = 'Upload one schedule file.';
+      }
+    }
+
+    updateUploadMode();
+  </script>
 </body>
 </html>

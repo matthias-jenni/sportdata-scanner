@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 import pdfplumber
 
 _TIME_RE     = re.compile(r"(\d{1,2}:\d{2})\s*[-\u2013]\s*(\d{1,2}:\d{2})")
-_RING_RE     = re.compile(r"ring\s*(\d+)", re.IGNORECASE)
+_RING_RE     = re.compile(r"(ring|tatami|tatmi)\s*(\d+)", re.IGNORECASE)
 _CAT_RE      = re.compile(r"^\d+\s+[A-Z0-9]{2}\s+\d+", re.IGNORECASE)
 _FIGHT_NO_RE = re.compile(r"^#(\d+)\s+(.+)")
 # A complete fighter entry ends with (CLUB,CC) where CC = 2-3 upper-case letters
@@ -61,12 +61,17 @@ def _parse_daily_schedule(pdf) -> list[dict]:
     fights = []
     for page in pdf.pages:
         text = page.extract_text()
-        
-        ring_m = re.search(r'SESSION \d+ (R\d+)', text)
+
+        venue_m = re.search(r'\b(RING|TATAMI|TATMI)\s*0*(\d+)\b', text or "", re.IGNORECASE)
+        session_m = re.search(r'SESSION\s+\d+\s+([RT])\s*0*(\d+)', text or "", re.IGNORECASE)
         time_m = re.search(r'\d{4}-\d{2}-\d{2}\s*(\d{2}:\d{2})', text)
-        
-        if ring_m:
-            current_ring = f"Ring {ring_m.group(1)[1:].zfill(2)}"
+
+        if venue_m:
+            venue_label = "Tatami" if venue_m.group(1).upper() in ("TATAMI", "TATMI") else "Ring"
+            current_ring = f"{venue_label} {int(venue_m.group(2)):02d}"
+        elif session_m:
+            venue_label = "Ring" if session_m.group(1).upper() == "R" else "Tatami"
+            current_ring = f"{venue_label} {int(session_m.group(2)):02d}"
         else:
             current_ring = "Ring 01"
             
@@ -160,7 +165,8 @@ def _parse_page(page, fights: list[dict]) -> None:
         # --- Detect ring header ---
         m = _RING_RE.search(col0)
         if m and not _TIME_RE.search(col0):
-            current_ring = f"Ring {int(m.group(1)):02d}"
+            venue_label = "Tatami" if m.group(1).lower() in ("tatami", "tatmi") else "Ring"
+            current_ring = f"{venue_label} {int(m.group(2)):02d}"
             ring_start = None
             ring_seq = 0
             continue
