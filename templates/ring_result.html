@@ -199,6 +199,11 @@
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
     {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}All parsed fighters are shown.{% endif %}
   </p>
+  {% if rounds %}
+  <p style="opacity:.9;font-size:.85rem;margin:.4rem 0 0">
+    {{ rounds }} × 2 min rounds &nbsp;·&nbsp; ~{{ slot_minutes }} min per fight (estimated schedule slot)
+  </p>
+  {% endif %}
 </div>
 
 <div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">

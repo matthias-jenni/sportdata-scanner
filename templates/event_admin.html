@@ -70,6 +70,16 @@
                 <label class="btn btn-outline-teal" for="type_results">Results</label>
               </div>
             </div>
+            <fieldset class="mb-3" id="rounds_section" hidden disabled>
+              <legend class="form-label fs-6">Fight-card rounds</legend>
+              <div class="btn-group w-100" role="group" aria-label="Rounds per fight">
+                <input type="radio" class="btn-check" name="rounds" id="rounds_2" value="2" autocomplete="off">
+                <label class="btn btn-outline-teal" for="rounds_2">2 × 2 min</label>
+                <input type="radio" class="btn-check" name="rounds" id="rounds_3" value="3" autocomplete="off" checked>
+                <label class="btn btn-outline-teal" for="rounds_3">3 × 2 min</label>
+              </div>
+              <div class="form-text">Estimated schedule: 9 min per fight for 2 rounds, 12 min for 3 rounds. Applies to all uploaded files.</div>
+            </fieldset>
             <div class="mb-3">
               <label class="form-label">Schedule File(s)</label>
               <input type="file" class="form-control" id="schedule_input" name="schedule" accept=".pdf,.html,.htm,text/html,application/pdf" required>
@@ -115,10 +125,13 @@
   <script>
     function updateUploadMode() {
       const ringMode = document.getElementById('type_ring')?.checked;
+      const roundsSection = document.getElementById('rounds_section');
       const scheduleInput = document.getElementById('schedule_input');
       const scheduleHelp = document.getElementById('schedule_help');
       if (!scheduleInput || !scheduleHelp) return;
 
+      roundsSection.hidden = !ringMode;
+      roundsSection.disabled = !ringMode;
       scheduleInput.multiple = !!ringMode;
       if (ringMode) {
         scheduleHelp.textContent = 'You can select multiple files (for example ring-sports + tatami) for one combined day.';

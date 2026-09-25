@@ -28,6 +28,8 @@ _FIGHT_NO_RE = re.compile(r"^#(\d+)\s+(.+)")
 _COUNTRY_END_RE = re.compile(r",([A-Z]{2,3})\)\s*$")
 
 FIGHT_DURATION_MIN = 12
+# Includes breaks and the same transition allowance as the existing 12-minute slot.
+ROUND_SLOT_MINUTES = {2: 9, 3: FIGHT_DURATION_MIN}
 
 
 
@@ -41,8 +43,11 @@ def _split_camel(name: str) -> str:
     # "KarakusMehmetGokturk" -> "Karakus Mehmet Gokturk"
     return re.sub(r'([a-z])([A-Z])', r'\1 \2', name).replace('_', ' ')
 
-def extract_ring_fights(pdf_path: str) -> list[dict]:
-    """Return all fight cards parsed from the ring-schedule PDF."""
+def extract_ring_fights(pdf_path: str, rounds: int = 3) -> list[dict]:
+    """Return fight cards, estimating missing times using the selected round count."""
+    if rounds not in ROUND_SLOT_MINUTES:
+        raise ValueError("Rounds must be 2 or 3.")
+    slot_minutes = ROUND_SLOT_MINUTES[rounds]
     fights: list[dict] = []
     with pdfplumber.open(pdf_path) as pdf:
         if not pdf.pages:
@@ -50,14 +55,14 @@ def extract_ring_fights(pdf_path: str) -> list[dict]:
             
         first_page_text = pdf.pages[0].extract_text()
         if first_page_text and "DailySchedule" in first_page_text:
-            return _parse_daily_schedule(pdf)
+            return _parse_daily_schedule(pdf, slot_minutes)
             
         for page in pdf.pages:
-            _parse_page(page, fights)
+            _parse_page(page, fights, slot_minutes)
             
     return fights
 
-def _parse_daily_schedule(pdf) -> list[dict]:
+def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[dict]:
     fights = []
     for page in pdf.pages:
         text = page.extract_text()
@@ -110,9 +115,9 @@ def _parse_daily_schedule(pdf) -> list[dict]:
             time_str = ""
             time_end_str = ""
             if ring_start:
-                est = ring_start + timedelta(minutes=(seq_no - 1) * FIGHT_DURATION_MIN)
+                est = ring_start + timedelta(minutes=(seq_no - 1) * slot_minutes)
                 time_str = est.strftime("%H:%M")
-                time_end_str = (est + timedelta(minutes=FIGHT_DURATION_MIN)).strftime("%H:%M")
+                time_end_str = (est + timedelta(minutes=slot_minutes)).strftime("%H:%M")
             
             fights.append({
                 "ring": current_ring,
@@ -142,7 +147,7 @@ def _parse_daily_schedule(pdf) -> list[dict]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _parse_page(page, fights: list[dict]) -> None:
+def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN) -> None:
     tables = page.extract_tables()
     if not tables:
         return
@@ -242,9 +247,9 @@ def _parse_page(page, fights: list[dict]) -> None:
         # Estimate time if missing
         if not time_str and ring_start is not None and col1.isdigit():
             seq = int(col1)
-            est = ring_start + timedelta(minutes=(seq - ring_seq) * FIGHT_DURATION_MIN)
+            est = ring_start + timedelta(minutes=(seq - ring_seq) * slot_minutes)
             time_str = est.strftime("%H:%M")
-            time_end_str = (est + timedelta(minutes=FIGHT_DURATION_MIN)).strftime("%H:%M")
+            time_end_str = (est + timedelta(minutes=slot_minutes)).strftime("%H:%M")
             time_estimated = True
 
         seq_no = int(col1) if col1.isdigit() else None

@@ -132,7 +132,7 @@ def get_event_registrations(event_id):
             return json.load(f)
     return []
 
-def add_event_day(event_id, day_name, day_type, rows, raw_draws=None):
+def add_event_day(event_id, day_name, day_type, rows, raw_draws=None, rounds=None):
     day_id = generate_id()
     created_ts = datetime.datetime.now().isoformat()
     
@@ -147,6 +147,8 @@ def add_event_day(event_id, day_name, day_type, rows, raw_draws=None):
         }
         if raw_draws:
             data["raw_draws"] = raw_draws
+        if rounds is not None:
+            data["rounds"] = rounds
         _sb.table("event_days").insert(data).execute()
         return day_id
         
@@ -164,6 +166,8 @@ def add_event_day(event_id, day_name, day_type, rows, raw_draws=None):
     }
     if raw_draws:
         day_data["raw_draws"] = raw_draws
+    if rounds is not None:
+        day_data["rounds"] = rounds
         
     with open(os.path.join(days_dir, f"{day_id}.json"), "w") as f:
         json.dump(day_data, f, indent=2)

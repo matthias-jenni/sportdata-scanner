@@ -232,6 +232,9 @@ def upload_day(event_id):
     if not sched_files:
         flash("Please upload at least one schedule file.", "error")
         return redirect(url_for("event_admin", event_id=event_id))
+    if day_type == "ring-cards" and request.form.get("rounds", "3") not in ("2", "3"):
+        flash("Choose 2 or 3 rounds for fight cards.", "error")
+        return redirect(url_for("event_admin", event_id=event_id))
         
     import tempfile, pathlib
     try:
@@ -256,15 +259,16 @@ def upload_day(event_id):
                 _storage.add_event_day(event_id, day_name, day_type, rows=schedule, raw_draws=raw_draws)
             elif day_type == "ring-cards":
                 from utils.parse_ring_schedule import extract_ring_fights
+                rounds = int(request.form.get("rounds", "3"))
                 ring_fights = []
                 for idx, rf in enumerate(sched_files):
                     exts = _re.sub(r'.*\.', '.', rf.filename.lower()) or '.pdf'
                     sched_path_multi = tmp / f"schedule_{idx}{exts}"
                     rf.save(str(sched_path_multi))
-                    parsed = extract_ring_fights(str(sched_path_multi))
+                    parsed = extract_ring_fights(str(sched_path_multi), rounds=rounds)
                     ring_fights.extend(parsed)
                 print("Extracted fights:", len(ring_fights))
-                _storage.add_event_day(event_id, day_name, day_type, rows=ring_fights)
+                _storage.add_event_day(event_id, day_name, day_type, rows=ring_fights, rounds=rounds)
             elif day_type == "results":
                 from utils.parse_results import extract_results_html
                 results_data = extract_results_html(str(sched_path))
@@ -337,10 +341,13 @@ def share_day(event_id, day_id):
                                
     elif day_type == "ring-cards":
         ring_fights = day.get("rows", [])
-        from utils.parse_ring_schedule import find_swiss_fights
+        from utils.parse_ring_schedule import find_swiss_fights, ROUND_SLOT_MINUTES
         matched = find_swiss_fights(ring_fights, team_fighters, "")
+        rounds = day.get("rounds")
         return render_template("ring_result.html",
                                cards=matched,
+                               rounds=rounds if rounds in ROUND_SLOT_MINUTES else None,
+                               slot_minutes=ROUND_SLOT_MINUTES.get(rounds),
                                swiss_count=len(team_fighters),
                                total_fights=len(matched),
                                event_name=event["name"],
