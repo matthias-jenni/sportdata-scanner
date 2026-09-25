@@ -28,8 +28,11 @@ _FIGHT_NO_RE = re.compile(r"^#(\d+)\s+(.+)")
 _COUNTRY_END_RE = re.compile(r",([A-Z]{2,3})\)\s*$")
 
 FIGHT_DURATION_MIN = 12
-# Includes breaks and the same transition allowance as the existing 12-minute slot.
+# Scheduling slots include breaks and transitions, not just fighting time.
 ROUND_SLOT_MINUTES = {2: 9, 3: FIGHT_DURATION_MIN}
+_SHORT_STYLES = {"LC", "KL", "PF"}
+_SHORT_AGES = {"CH", "YC", "OC"}
+_CATEGORY_PARTS_RE = re.compile(r"^\s*\d+\s*([A-Z0-9]{2})\s*(\d+)(?:\s+([A-Z]{1,3})(?=\s|$))?", re.IGNORECASE)
 
 
 
@@ -43,11 +46,40 @@ def _split_camel(name: str) -> str:
     # "KarakusMehmetGokturk" -> "Karakus Mehmet Gokturk"
     return re.sub(r'([a-z])([A-Z])', r'\1 \2', name).replace('_', ' ')
 
-def extract_ring_fights(pdf_path: str, rounds: int = 3) -> list[dict]:
-    """Return fight cards, estimating missing times using the selected round count."""
-    if rounds not in ROUND_SLOT_MINUTES:
-        raise ValueError("Rounds must be 2 or 3.")
-    slot_minutes = ROUND_SLOT_MINUTES[rounds]
+def _category_parts(code: str) -> tuple[str, str, str] | None:
+    m = _CATEGORY_PARTS_RE.match(code or "")
+    return (m.group(1).upper(), m.group(2).lstrip("0") or "0", (m.group(3) or "").upper()) if m else None
+
+
+def category_lookup(registrations: list[dict] | None) -> dict[tuple[str, str], str]:
+    """Resolve compact daily codes; conflicting registration ages stay unresolved."""
+    ages: dict[tuple[str, str], set[str]] = {}
+    for fighter in registrations or []:
+        parts = _category_parts(fighter.get("category_code") or fighter.get("category") or "")
+        if parts and parts[2]:
+            ages.setdefault(parts[:2], set()).add(parts[2])
+    return {key: next(iter(values)) for key, values in ages.items() if len(values) == 1}
+
+
+def category_timing(code: str, ages: dict[tuple[str, str], str] | None = None) -> tuple[int | None, int]:
+    """Return (rounds, estimated slot minutes); unknown LC/KL/PF age is not labeled."""
+    parts = _category_parts(code)
+    if not parts:
+        return None, FIGHT_DURATION_MIN
+    style, number, age = parts
+    if style in _SHORT_STYLES:
+        age = age or (ages or {}).get((style, number), "")
+        if not age:
+            return None, FIGHT_DURATION_MIN
+        rounds = 2 if age in _SHORT_AGES else 3
+    else:
+        rounds = 3
+    return rounds, ROUND_SLOT_MINUTES[rounds]
+
+
+def extract_ring_fights(pdf_path: str, registrations: list[dict] | None = None) -> list[dict]:
+    """Return fight cards, estimating each fight using its category's slot."""
+    ages = category_lookup(registrations)
     fights: list[dict] = []
     with pdfplumber.open(pdf_path) as pdf:
         if not pdf.pages:
@@ -55,21 +87,21 @@ def extract_ring_fights(pdf_path: str, rounds: int = 3) -> list[dict]:
             
         first_page_text = pdf.pages[0].extract_text()
         if first_page_text and "DailySchedule" in first_page_text:
-            return _parse_daily_schedule(pdf, slot_minutes)
+            return _parse_daily_schedule(pdf, ages)
             
         for page in pdf.pages:
-            _parse_page(page, fights, slot_minutes)
+            _parse_page(page, fights, ages)
             
     return fights
 
-def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[dict]:
+def _parse_daily_schedule(pdf, ages: dict[tuple[str, str], str]) -> list[dict]:
     fights = []
     for page in pdf.pages:
         text = page.extract_text()
 
         venue_m = re.search(r'\b(RING|TATAMI|TATMI)\s*0*(\d+)\b', text or "", re.IGNORECASE)
         session_m = re.search(r'SESSION\s+\d+\s+([RT])\s*0*(\d+)', text or "", re.IGNORECASE)
-        time_m = re.search(r'\d{4}-\d{2}-\d{2}\s*(\d{2}:\d{2})', text)
+        time_m = re.search(r'\d{4}-\d{2}-\d{2}\s*(\d{2}:\d{2})', text or "")
 
         if venue_m:
             venue_label = "Tatami" if venue_m.group(1).upper() in ("TATAMI", "TATMI") else "Ring"
@@ -90,7 +122,8 @@ def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[d
         tables = page.extract_tables()
         if not tables:
             continue
-            
+        next_start = ring_start
+        previous_seq = 0
         for row in tables[0]:
             cell = row[0] if row else ""
             if not cell:
@@ -104,6 +137,7 @@ def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[d
             fight_no = int(m.group(2))
             phase = m.group(3)
             category_code = m.group(4)
+            rounds, slot_minutes = category_timing(category_code, ages)
             f1_name_raw = m.group(5).strip()
             f1_country = m.group(6).strip()
             f2_name_raw = m.group(7).strip()
@@ -114,16 +148,21 @@ def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[d
             
             time_str = ""
             time_end_str = ""
-            if ring_start:
-                est = ring_start + timedelta(minutes=(seq_no - 1) * slot_minutes)
-                time_str = est.strftime("%H:%M")
-                time_end_str = (est + timedelta(minutes=slot_minutes)).strftime("%H:%M")
+            if previous_seq and seq_no != previous_seq + 1:
+                next_start = None  # An unparsed fight may have occupied the gap.
+            if next_start is not None and (previous_seq or seq_no == 1):
+                time_str = next_start.strftime("%H:%M")
+                time_end_str = (next_start + timedelta(minutes=slot_minutes)).strftime("%H:%M")
+                next_start += timedelta(minutes=slot_minutes)
+            previous_seq = seq_no
             
             fights.append({
                 "ring": current_ring,
                 "time": time_str,
                 "time_end": time_end_str,
-                "time_estimated": bool(ring_start),
+                "time_estimated": bool(time_str),
+                "rounds": rounds,
+                "slot_minutes": slot_minutes,
                 "seq_no": seq_no,
                 "fight_no": fight_no,
                 "category_code": category_code,
@@ -147,16 +186,15 @@ def _parse_daily_schedule(pdf, slot_minutes: int = FIGHT_DURATION_MIN) -> list[d
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN) -> None:
+def _parse_page(page, fights: list[dict], ages: dict[tuple[str, str], str]) -> None:
     tables = page.extract_tables()
     if not tables:
         return
 
     table = tables[0]
     current_ring = ""
-    # Ring start time and index used for time estimation
-    ring_start: datetime | None = None
-    ring_seq = 0
+    next_start: datetime | None = None
+    previous_seq: int | None = None
 
     for row in table:
         if not row:
@@ -172,8 +210,8 @@ def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN
         if m and not _TIME_RE.search(col0):
             venue_label = "Tatami" if m.group(1).lower() in ("tatami", "tatmi") else "Ring"
             current_ring = f"{venue_label} {int(m.group(2)):02d}"
-            ring_start = None
-            ring_seq = 0
+            next_start = None
+            previous_seq = None
             continue
 
         # --- Skip header / title rows ---
@@ -189,13 +227,6 @@ def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN
         if m_time:
             time_str     = m_time.group(1)
             time_end_str = m_time.group(2)
-            # Track ring start for estimation fallback
-            if ring_start is None:
-                try:
-                    ring_start = datetime.strptime(time_str, "%H:%M")
-                    ring_seq = int(col1) if col1.isdigit() else 1
-                except ValueError:
-                    pass
 
         # --- Parse match cell ---
         if not col3:
@@ -211,6 +242,7 @@ def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN
 
         category_raw = re.sub(r"\s*\(\d+\)\s*$", "", lines[0]).strip()
         category_code = category_raw.upper()
+        rounds, slot_minutes = category_timing(category_code, ages)
 
         # Parse fighters from remaining lines
         f1_name, f1_club, f1_country = "", "", ""
@@ -244,21 +276,29 @@ def _parse_page(page, fights: list[dict], slot_minutes: int = FIGHT_DURATION_MIN
         if not f1_name:
             continue
 
-        # Estimate time if missing
-        if not time_str and ring_start is not None and col1.isdigit():
-            seq = int(col1)
-            est = ring_start + timedelta(minutes=(seq - ring_seq) * slot_minutes)
-            time_str = est.strftime("%H:%M")
-            time_end_str = (est + timedelta(minutes=slot_minutes)).strftime("%H:%M")
-            time_estimated = True
-
         seq_no = int(col1) if col1.isdigit() else None
+        if time_str:
+            # Explicit PDF timestamps take precedence and restart estimation.
+            try:
+                next_start = datetime.strptime(time_str, "%H:%M") + timedelta(minutes=slot_minutes)
+            except ValueError:
+                next_start = None
+        elif next_start is not None and seq_no is not None and previous_seq is not None and seq_no == previous_seq + 1:
+            time_str = next_start.strftime("%H:%M")
+            next_start += timedelta(minutes=slot_minutes)
+            time_end_str = next_start.strftime("%H:%M")
+            time_estimated = True
+        else:
+            next_start = None  # Sequence gaps and unnumbered rows cannot be timed reliably.
+        previous_seq = seq_no
 
         fights.append({
             "ring":           current_ring,
             "time":           time_str,
             "time_end":       time_end_str,
             "time_estimated": time_estimated,
+            "rounds":        rounds,
+            "slot_minutes":  slot_minutes,
             "seq_no":         seq_no,
             "fight_no":       fight_no,
             "category_code":  category_code,

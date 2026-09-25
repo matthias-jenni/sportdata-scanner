@@ -199,11 +199,6 @@
   <p style="opacity:.7;font-size:.8rem;margin:.3rem 0 0">
     {% if club_filter %}Only fighters from <strong>{{ club_filter }}</strong> are shown.{% else %}All parsed fighters are shown.{% endif %}
   </p>
-  {% if rounds %}
-  <p style="opacity:.9;font-size:.85rem;margin:.4rem 0 0">
-    {{ rounds }} × 2 min rounds &nbsp;·&nbsp; ~{{ slot_minutes }} min per fight (estimated schedule slot)
-  </p>
-  {% endif %}
 </div>
 
 <div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
@@ -298,10 +293,13 @@
         </div>
 
       </div>
-      {% if c.phase or c.time_end %}
+      {% if c.phase or c.time_end or c.slot_minutes %}
       <div style="padding:.3rem .85rem;background:#f7f8fa;font-size:.74rem;color:#777;border-top:1px solid #eee">
         {% if c.phase %}{{ c.phase }}{% endif %}
         {% if c.time and c.time_end %}&nbsp;·&nbsp; {{ c.time }} – {{ c.time_end }}{% if c.time_estimated %} (est.){% endif %}{% endif %}
+        {% if c.slot_minutes %}
+          &nbsp;·&nbsp; {% if c.rounds %}{{ c.rounds }} × 2 min rounds · {% endif %}~{{ c.slot_minutes }} min estimated slot{% if not c.rounds %} (age unknown){% endif %}
+        {% endif %}
       </div>
       {% endif %}
     </div>
