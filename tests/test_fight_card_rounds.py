@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bs4 import BeautifulSoup
+
 from app import app
 from utils import storage
 from utils.parse_ring_schedule import category_lookup, category_timing, extract_ring_fights
@@ -74,6 +76,69 @@ class FightCardRoundsTests(unittest.TestCase):
         self.addCleanup(self.patch_dir.stop)
         self.event_id = storage.create_event("Mixed timing", REGISTRATIONS)
         self.client = app.test_client()
+
+    def test_category_display_parts_preserve_code_components(self):
+        cases = {
+            "01PF070SM-57KG": "01 PF 070 S M -57 KG",
+            "01 PF 070 S M -57 KG": "01 PF 070 S M -57 KG",
+            "07K1406OJM-51KG": "07 K1 406 OJ M -51 KG",
+            "06LK380SF-56KG": "06 LK 380 S F -56 KG",
+            "02LC106": "02 LC 106",
+            "001PF0460GCJM": "001 PF 0460 GCJ M",
+            "01PF070SM+94KG": "01 PF 070 S M +94 KG",
+            "01 PF 070 S M - 57 kg": "01 PF 070 S M -57 kg",
+            "Unknown category": "Unknown category",
+            "": "",
+        }
+        for code, expected in cases.items():
+            with self.subTest(code=code):
+                parts = app.jinja_env.filters["category_parts"](code)
+                self.assertEqual(expected, " ".join(parts))
+
+    def test_category_display_spaces_and_only_discipline_is_bold(self):
+        rows = [{"ring": "Tatami 12", "time": "09:00", "seq_no": 1,
+                 "fight_no": 2101, "category_code": "01PF070SM-57KG", "phase": "Final",
+                 "fighter1": {"name": "RED FIGHTER", "country": "SUI", "club": "Team"},
+                 "fighter2": {"name": "BLUE FIGHTER", "country": "GER", "club": "Other"}}]
+        with app.test_request_context():
+            html = app.jinja_env.get_template("ring_result.html").render(
+                cards=[dict(rows[0], our_color="red")], swiss_count=1,
+                total_fights=1, event_id=self.event_id,
+            )
+        soup = BeautifulSoup(html, "html.parser")
+        summary = soup.select_one(".col-ring .badge-cat-summary")
+        self.assertEqual("PF -57 KG", summary.get_text())
+        self.assertEqual(["PF"], [part.get_text() for part in summary.select("strong")])
+        self.assertIsNotNone(summary.parent.select_one(".badge-ring"))
+        category = soup.select_one(".card-details .badge-cat-full")
+        self.assertEqual("01 PF 070 S M -57 KG", category.get_text())
+        self.assertEqual(["PF"], [part.get_text() for part in category.select("strong")])
+        self.assertEqual("01PF070SM-57KG", rows[0]["category_code"])
+        rows[0]["category_code"] = '<script>alert("unsafe")</script>'
+        with app.test_request_context():
+            html = app.jinja_env.get_template("ring_result.html").render(
+                cards=[dict(rows[0], our_color="red")], swiss_count=1,
+                total_fights=1, event_id=self.event_id,
+            )
+        soup = BeautifulSoup(html, "html.parser")
+        summary = soup.select_one(".badge-cat-summary")
+        self.assertEqual(rows[0]["category_code"], summary.get_text())
+        self.assertIsNone(summary.find("script"))
+        category = soup.select_one(".card-details .badge-cat-full")
+        self.assertEqual(rows[0]["category_code"], category.get_text())
+        self.assertIsNone(category.find("script"))
+
+    def test_compact_category_summary_handles_missing_and_positive_weight(self):
+        for code, expected in [("02LC106", "LC"), ("07K1406OJM-51KG", "K1 -51 KG"),
+                               ("01 PF 070 S M +94 KG", "PF +94 KG")]:
+            with self.subTest(code=code), app.test_request_context():
+                html = app.jinja_env.get_template("ring_result.html").render(
+                    cards=[{"category_code": code, "our_color": "red", "ring": "Ring 01",
+                            "fighter1": {"name": "RED FIGHTER"}, "fighter2": {"name": "BLUE FIGHTER"}}],
+                    swiss_count=1, total_fights=1, event_id=self.event_id,
+                )
+                summary = BeautifulSoup(html, "html.parser").select_one(".badge-cat-summary")
+                self.assertEqual(expected, summary.get_text())
 
     def test_discipline_and_age_both_control_short_slots(self):
         for style in ("LC", "KL", "PF"):

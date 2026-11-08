@@ -31,7 +31,7 @@
 
     .card-summary {
       display: grid;
-      grid-template-columns: 55px minmax(120px, 2fr) auto minmax(80px, 3fr) 20px;
+      grid-template-columns: 55px minmax(120px, 2fr) minmax(0, 3fr) 20px;
       align-items: center;
       gap: 0.75rem;
       padding: .65rem .85rem;
@@ -42,7 +42,6 @@
     
     .col-time, .col-ring { font-size: .8rem; white-space: nowrap; }
     .col-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
-    .col-cat { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
     .col-chevron { display: flex; justify-content: flex-end; }
 
 
@@ -70,7 +69,9 @@
     .meta-badges .badge-time  { background: #dcfce7; color: #14532d; border-radius: .3rem; padding: .1rem .4rem; font-weight: 800; letter-spacing: .3px; }
     .meta-badges .badge-time-est { background: #fff8e1; color: #f57f17; border-radius: .3rem; padding: .1rem .4rem; }
     .meta-badges .badge-fight { color: #888; }
-    .meta-badges .badge-cat   { color: #777; font-size: .74rem; }
+    .meta-badges .badge-cat   { color: #333; font-size: .875rem; font-weight: 400; overflow-wrap: anywhere; min-width: 0; }
+    .meta-badges .badge-cat strong { font-weight: 700; }
+    .category-details { padding: .65rem .85rem; background: #f7f8fa; }
 
     .chevron {
       margin-left: auto;
@@ -95,15 +96,14 @@
 
     @media (max-width: 580px) {
       .card-summary {
-        grid-template-columns: 55px 1fr 20px !important;
+        grid-template-columns: 55px minmax(0, 1fr) 20px !important;
         grid-template-rows: auto auto;
         gap: 0.4rem;
         padding: .5rem .6rem;
       }
       .col-time { grid-column: 1; grid-row: 1; }
-      .col-name { grid-column: 2 / span 2; grid-row: 1; white-space: normal; }
-      .col-ring { grid-column: 1; grid-row: 2; align-items: start; display: flex; }
-      .col-cat  { grid-column: 2; grid-row: 2; }
+      .col-name { grid-column: 2; grid-row: 1; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+      .col-ring { grid-column: 1 / span 2; grid-row: 2; align-items: start; display: flex; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
       .col-chevron { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; }
     }
 
@@ -235,6 +235,7 @@
     {% set our_flag = (c.fighter1.country|flag if c.fighter1.country else "") ~ (" " ~ c.fighter2.country|flag if c.fighter2.country and c.fighter2.country != c.fighter1.country else "") %}
   {% endif %}
 
+  {% set category_parts = c.category_code|category_parts %}
   <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
 
     
@@ -261,12 +262,8 @@
       <!-- 3. Ring no. -->
       <div class="col-ring meta-badges">
         <span class="badge-ring">{{ c.ring }}</span>
-      </div>
-
-      <!-- 4. Category -->
-      <div class="col-cat meta-badges">
+        <span class="badge-cat badge-cat-summary">{% if category_parts|length >= 3 and category_parts[1]|upper in ['PF', 'LC', 'KL', 'LK', 'FC', 'K1'] %}<strong>{{ category_parts[1] }}</strong>{% if category_parts[-1]|upper == 'KG' %} {{ category_parts[-2] }} {{ category_parts[-1] }}{% endif %}{% else %}{{ category_parts|join(' ') }}{% endif %}</span>
         {% if c.fight_no %}<span class="badge-fight">#{{ c.fight_no }}</span>{% endif %}
-        <span class="badge-cat">{{ c.category_code }}</span>
       </div>
 
       <div class="col-chevron">
@@ -276,6 +273,9 @@
 
     {# ---- Expanded details ---- #}
     <div class="card-details">
+      <div class="category-details meta-badges">
+        <span class="badge-cat badge-cat-full">{% for part in category_parts %}{% if not loop.first %} {% endif %}{% if loop.index == 2 %}<strong>{{ part }}</strong>{% else %}{{ part }}{% endif %}{% endfor %}</span>
+      </div>
       <div class="corners">
 
         <div class="corner corner-red{% if c.our_color in ('red','both') %} our-fighter{% endif %}">

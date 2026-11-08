@@ -60,6 +60,20 @@ import re as _re
 _CAT_NUM_RE = _re.compile(r"(\d+)\s+([A-Z]{2})\s+(\d+)", _re.IGNORECASE)
 
 
+@app.template_filter('category_parts')
+def category_parts_filter(code: str) -> list[str]:
+    value = (code or "").strip()
+    match = _re.fullmatch(
+        r"(\d+)\s*(PF|LC|KL|LK|FC|K1)\s*(\d+)"
+        r"(?:\s*([A-Z]{1,3})\s*([MF]))?"
+        r"(?:\s*([+-]\s*\d+(?:[.,]\d+)?)\s*(KG))?",
+        value, _re.IGNORECASE,
+    )
+    if not match:
+        return value.split()
+    return [_re.sub(r"\s+", "", part) for part in match.groups() if part]
+
+
 def _cat_key(s: str):
     """
     Extract the unique category key: (discipline_prefix, category_number).
