@@ -12,6 +12,9 @@ Fighter 1 (starts with #NNNN) → red corner
 Fighter 2 (remaining lines)   → blue corner
 
 Returns a list of fight-card dicts.
+
+DailySchedule timing continues across pages within each venue/session.
+New sessions start at their printed time; sequence gaps stop estimation.
 """
 from __future__ import annotations
 
@@ -96,34 +99,43 @@ def extract_ring_fights(pdf_path: str, registrations: list[dict] | None = None) 
 
 def _parse_daily_schedule(pdf, ages: dict[tuple[str, str], str]) -> list[dict]:
     fights = []
+    session_timing: dict[
+        tuple[str, int | None, str | None, str | None],
+        tuple[datetime | None, int],
+    ] = {}
     for page in pdf.pages:
         text = page.extract_text()
 
         venue_m = re.search(r'\b(RING|TATAMI|TATMI)\s*0*(\d+)\b', text or "", re.IGNORECASE)
-        session_m = re.search(r'SESSION\s+\d+\s+([RT])\s*0*(\d+)', text or "", re.IGNORECASE)
-        time_m = re.search(r'\d{4}-\d{2}-\d{2}\s*(\d{2}:\d{2})', text or "")
+        session_m = re.search(r'SESSION\s+(\d+)\s+([RT])\s*0*(\d+)', text or "", re.IGNORECASE)
+        time_m = re.search(r'(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})', text or "")
 
         if venue_m:
             venue_label = "Tatami" if venue_m.group(1).upper() in ("TATAMI", "TATMI") else "Ring"
             current_ring = f"{venue_label} {int(venue_m.group(2)):02d}"
         elif session_m:
-            venue_label = "Ring" if session_m.group(1).upper() == "R" else "Tatami"
-            current_ring = f"{venue_label} {int(session_m.group(2)):02d}"
+            venue_label = "Ring" if session_m.group(2).upper() == "R" else "Tatami"
+            current_ring = f"{venue_label} {int(session_m.group(3)):02d}"
         else:
             current_ring = "Ring 01"
             
         ring_start = None
         if time_m:
             try:
-                ring_start = datetime.strptime(time_m.group(1), "%H:%M")
+                ring_start = datetime.strptime(time_m.group(2), "%H:%M")
             except ValueError:
                 pass
                 
         tables = page.extract_tables()
         if not tables:
             continue
-        next_start = ring_start
-        previous_seq = 0
+        session_key = (
+            current_ring,
+            int(session_m.group(1)) if session_m else None,
+            time_m.group(1) if time_m else None,
+            time_m.group(2) if time_m else None,
+        )
+        next_start, previous_seq = session_timing.get(session_key, (ring_start, 0))
         for row in tables[0]:
             cell = row[0] if row else ""
             if not cell:
@@ -148,9 +160,11 @@ def _parse_daily_schedule(pdf, ages: dict[tuple[str, str], str]) -> list[dict]:
             
             time_str = ""
             time_end_str = ""
-            if previous_seq and seq_no != previous_seq + 1:
+            if seq_no == 1:
+                next_start = ring_start
+            elif seq_no != previous_seq + 1:
                 next_start = None  # An unparsed fight may have occupied the gap.
-            if next_start is not None and (previous_seq or seq_no == 1):
+            if next_start is not None:
                 time_str = next_start.strftime("%H:%M")
                 time_end_str = (next_start + timedelta(minutes=slot_minutes)).strftime("%H:%M")
                 next_start += timedelta(minutes=slot_minutes)
@@ -180,6 +194,7 @@ def _parse_daily_schedule(pdf, ages: dict[tuple[str, str], str]) -> list[dict]:
                     "color": "blue"
                 }
             })
+        session_timing[session_key] = (next_start, previous_seq)
     return fights
 
 # ---------------------------------------------------------------------------

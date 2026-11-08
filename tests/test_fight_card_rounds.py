@@ -43,8 +43,12 @@ def legacy_page(rows, ring="Ring 01"):
     ])
 
 
-def daily_page(codes, start="09:00"):
-    text = f"DailySchedule RING 01 2026-03-19 {start}" if start else "DailySchedule RING 01"
+def daily_page(codes, start="09:00", venue="RING 01", session=None):
+    text = f"DailySchedule {venue}"
+    if session is not None:
+        text += f"\nSESSION {session}"
+    if start:
+        text += f"\n2026-03-19 {start}"
     rows = [[f"{seq} {2100 + seq} Final {code} RED RedFighter SUI\nBLUE BlueFighter GER"]
             for seq, code in codes]
     return FakePage(text, rows)
@@ -126,6 +130,43 @@ class FightCardRoundsTests(unittest.TestCase):
             fights = extract_ring_fights("unused.pdf", registrations=REGISTRATIONS)
         self.assertEqual(["09:00", "", ""], [f["time"] for f in fights])
 
+    def test_daily_session_continues_across_pages(self):
+        first = daily_page([(seq, "01PF070") for seq in range(1, 20)],
+                           start="14:01", venue="", session="3 T4")
+        second = daily_page([(20, "01PF070"), (21, "01PF070")],
+                            start="14:01", venue="", session="3 T4")
+        with patch("utils.parse_ring_schedule.pdfplumber.open", return_value=FakePdf(first, second)):
+            fights = extract_ring_fights("unused.pdf")
+        self.assertEqual(("18:01", "18:13"), (fights[-1]["time"], fights[-1]["time_end"]))
+        self.assertEqual("Tatami 04", fights[-1]["ring"])
+        self.assertTrue(fights[-1]["time_estimated"])
+
+    def test_daily_sessions_and_venues_keep_independent_timing(self):
+        pages = [
+            daily_page([(1, "02LC106")], session="1 R1"),
+            daily_page([(1, "06LK327")], venue="RING 02", session="1 R2"),
+            daily_page([(2, "06LK327")], session="1 R1"),
+            daily_page([(1, "01PF048")], session="2 R1"),
+            daily_page([(3, "01PF048")], session="1 R1"),
+            daily_page([(1, "06LK327")], start="14:01", session="3 R1"),
+        ]
+        with patch("utils.parse_ring_schedule.pdfplumber.open", return_value=FakePdf(*pages)):
+            fights = extract_ring_fights("unused.pdf", registrations=REGISTRATIONS)
+        self.assertEqual(["09:00", "09:00", "09:09", "09:00", "09:21", "14:01"],
+                         [f["time"] for f in fights])
+
+    def test_daily_continuation_gaps_do_not_restart_estimation(self):
+        cases = [
+            [daily_page([(20, "01PF070"), (21, "01PF070")])],
+            [daily_page([(1, "01PF070")]), daily_page([(3, "01PF070"), (4, "01PF070")])],
+            [daily_page([(1, "01PF070"), (3, "01PF070")]), daily_page([(4, "01PF070")])],
+        ]
+        for pages in cases:
+            with self.subTest(pages=pages):
+                with patch("utils.parse_ring_schedule.pdfplumber.open", return_value=FakePdf(*pages)):
+                    fights = extract_ring_fights("unused.pdf")
+                self.assertEqual(["", ""], [f["time"] for f in fights[-2:]])
+
     def test_independent_rings_and_pages(self):
         first = legacy_page([(1, "09:00 - 09:09", "02 LC 106 CH F -42 kg")])
         second = legacy_page([(1, "11:00 - 11:12", "06 LK 327 S M -45 kg"),
@@ -158,6 +199,26 @@ class FightCardRoundsTests(unittest.TestCase):
         self.assertNotIn(b"min rounds", hero)
         self.assertIn(b'class="card-details"', shared.data)
         self.assertLess(shared.data.index(b'class="card-details"'), shared.data.index(b"2 \xc3\x97 2 min rounds"))
+
+    def test_upload_daily_continuation_persists_correct_time(self):
+        pdf = FakePdf(
+            daily_page([(seq, "01PF070") for seq in range(1, 20)],
+                       start="14:01", venue="", session="3 T4"),
+            daily_page([(20, "01PF070"), (21, "01PF070")],
+                       start="14:01", venue="", session="3 T4"),
+        )
+        with patch("utils.parse_ring_schedule.pdfplumber.open", return_value=pdf):
+            response = self.client.post(f"/events/{self.event_id}/upload-day", data={
+                "day_name": "Monday", "day_type": "ring-cards",
+                "schedule": (io.BytesIO(b"pdf"), "tatami.pdf"),
+            }, content_type="multipart/form-data")
+        self.assertEqual(302, response.status_code)
+        day_id = storage.get_event(self.event_id)["days"][0]["id"]
+        day = storage.get_event_day(self.event_id, day_id)
+        self.assertEqual("18:01", day["rows"][-1]["time"])
+        shared = self.client.get(f"/share/{self.event_id}/day/{day_id}")
+        self.assertEqual(200, shared.status_code)
+        self.assertIn(b"18:01", shared.data)
 
     def test_legacy_day_ignores_old_rounds_metadata(self):
         rows = [{"ring": "Ring 01", "time": "09:00", "time_end": "09:12", "time_estimated": True,
