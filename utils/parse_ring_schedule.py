@@ -34,7 +34,7 @@ FIGHT_DURATION_MIN = 12
 # Scheduling slots include breaks and transitions, not just fighting time.
 ROUND_SLOT_MINUTES = {2: 9, 3: FIGHT_DURATION_MIN}
 _SHORT_STYLES = {"LC", "KL", "PF"}
-_SHORT_AGES = {"CH", "YC", "OC"}
+_SHORT_AGES = {"CH", "YC", "OC", "V"}
 _CATEGORY_PARTS_RE = re.compile(r"^\s*\d+\s*([A-Z0-9]{2})\s*(\d+)(?:\s+([A-Z]{1,3})(?=\s|$))?", re.IGNORECASE)
 
 
@@ -70,8 +70,10 @@ def category_timing(code: str, ages: dict[tuple[str, str], str] | None = None) -
     if not parts:
         return None, FIGHT_DURATION_MIN
     style, number, age = parts
-    if style in _SHORT_STYLES:
-        age = age or (ages or {}).get((style, number), "")
+    age = age or (ages or {}).get((style, number), "")
+    if age == "V":
+        rounds = 2
+    elif style in _SHORT_STYLES:
         if not age:
             return None, FIGHT_DURATION_MIN
         rounds = 2 if age in _SHORT_AGES else 3

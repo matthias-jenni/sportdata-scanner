@@ -150,8 +150,14 @@ class FightCardRoundsTests(unittest.TestCase):
             for age in ("CH", "YC", "OC", "S"):
                 with self.subTest(style=style, age=age):
                     self.assertEqual((3, 12), category_timing(f"06 {style} 327 {age} M -45 kg"))
+        for style in ("LC", "KL", "PF", "LK", "K1", "FC"):
+            for gender in ("M", "F"):
+                with self.subTest(style=style, gender=gender):
+                    self.assertEqual((2, 9), category_timing(f"06 {style} 327 V {gender} -45 kg"))
         self.assertEqual((None, 12), category_timing("02LC106"))
         self.assertEqual((2, 9), category_timing("02LC106", category_lookup(REGISTRATIONS)))
+        masters = [{"category_code": "06 LK 327 V M -45 KG"}]
+        self.assertEqual((2, 9), category_timing("06LK327", category_lookup(masters)))
         self.assertEqual((3, 12), category_timing("06LK327"))
         self.assertEqual((3, 12), category_timing("02 LC 106 SCH M -42 KG"))
         ambiguous = REGISTRATIONS + [{"category_code": "02 LC 106 S F -42 KG"}]
