@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sportdata Integration – {{ event.name }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #f4f6f9; }
+    .hero {
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+      color: #fff;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      border-radius: 0 0 1.5rem 1.5rem;
+    }
+    .card { border-radius: 1rem; border: none; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
+    .btn-teal {
+      background: #0d9488; border-color: #0d9488; color: #fff;
+    }
+    .btn-teal:hover { background: #0f766e; border-color: #0f766e; color: #fff; }
+    .id-display {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #0d9488;
+      font-family: monospace;
+      letter-spacing: .05em;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: .25rem .65rem;
+      border-radius: 2rem;
+      font-size: .8rem;
+      font-weight: 600;
+    }
+    .status-set   { background: #dcfce7; color: #15803d; }
+    .status-unset { background: #fef9c3; color: #92400e; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="container">
+    <h2>🔗 Sportdata Integration</h2>
+    <p class="mb-0" style="opacity:.8">{{ event.name }}</p>
+  </div>
+</div>
+
+<div class="container pb-5" style="max-width:560px;">
+
+  <div class="mb-3">
+    <a href="{{ url_for('event_admin', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm">← Back to Admin</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show">
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card p-4 mb-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+      {% if event.sportdata_event_id %}
+        <span class="status-badge status-set">✓ Connected</span>
+      {% else %}
+        <span class="status-badge status-unset">Not configured</span>
+      {% endif %}
+    </div>
+
+    {% if event.sportdata_event_id %}
+    <div class="text-center mb-4">
+      <div class="text-muted small mb-1">Current Event ID</div>
+      <div class="id-display">{{ event.sportdata_event_id }}</div>
+    </div>
+    {% endif %}
+
+    <form action="{{ url_for('set_sportdata_id_form', event_id=event.id) }}" method="POST">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Sportdata Event ID</label>
+        <input type="text" class="form-control" name="sportdata_event_id"
+               value="{{ event.sportdata_event_id or '' }}"
+               placeholder="e.g. 2875">
+        <div class="form-text">
+          Find it in the sportdata.org URL: <code>…veranstaltung_info_main.php?vernr=<strong>2875</strong></code>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-teal px-4">Save</button>
+        {% if event.sportdata_event_id %}
+          <button type="submit" name="sportdata_event_id" value="" class="btn btn-outline-danger btn-sm"
+                  onclick="return confirm('Remove the Sportdata Event ID?')">Remove</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="card p-4">
+    <h6 class="fw-bold mb-2">What does this do?</h6>
+    <p class="text-muted small mb-2">
+      Once an Event ID is set, a <strong>🔄 Sync live times</strong> button appears on the fight cards and schedule pages. It fetches the current timetable from sportdata.org and compares it with the times parsed from your PDF.
+    </p>
+    <p class="text-muted small mb-0">
+      Each fight shows a <span style="color:#dc2626;font-weight:700">● +12m</span> (running late) or <span style="color:#16a34a;font-weight:700">● −5m</span> (running ahead) badge next to its scheduled time. The page auto-refreshes every 60 seconds while open.
+    </p>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

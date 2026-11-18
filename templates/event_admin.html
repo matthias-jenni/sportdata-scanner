@@ -32,8 +32,11 @@
     </div>
   </div>
   
-  <div class="container mt-3 mb-3 d-flex gap-2 flex-wrap">
+  <div class="container mt-3 mb-3 d-flex gap-2 flex-wrap align-items-center">
     <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">&larr; Dashboard</a>
+    <a href="{{ url_for('sportdata_integration', event_id=event.id) }}" class="btn btn-outline-teal btn-sm">
+      🔗 Sportdata Integration{% if event.sportdata_event_id %} <span class="badge bg-success ms-1" style="font-size:.65rem">ID set</span>{% endif %}
+    </a>
   </div>
   
   <div class="container pb-5">
@@ -111,6 +114,8 @@
         </div>
       </div>
     </div>
+
+
   </div>
   <script>
     function updateUploadMode() {

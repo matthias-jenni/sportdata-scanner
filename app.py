@@ -230,6 +230,26 @@ def event_admin(event_id):
         return redirect(url_for("index"))
     return render_template("event_admin.html", event=event)
 
+@app.route("/events/<event_id>/sportdata-integration", methods=["GET"])
+def sportdata_integration(event_id):
+    event = _storage.get_event(event_id)
+    if not event:
+        flash("Event not found.", "error")
+        return redirect(url_for("index"))
+    return render_template("sportdata_integration.html", event=event)
+
+
+@app.route("/events/<event_id>/set-sportdata-id", methods=["POST"])
+def set_sportdata_id_form(event_id):
+    if not _storage.get_event(event_id):
+        flash("Event not found.", "error")
+        return redirect(url_for("index"))
+    sportdata_id = request.form.get("sportdata_event_id", "").strip()
+    _storage.update_event_sportdata_id(event_id, sportdata_id)
+    flash("Sportdata Event ID updated.", "success")
+    return redirect(url_for("event_admin", event_id=event_id))
+
+
 @app.route("/events/<event_id>/upload-day", methods=["POST"])
 def upload_day(event_id):
     event = _storage.get_event(event_id)
