@@ -30,7 +30,8 @@ def generate_id():
 
 def get_events():
     if _sb:
-        res = _sb.table("events").select("id, name, created, filename, fighter_count").order("created", desc=True).execute()
+        # Supabase: run ALTER TABLE events ADD COLUMN IF NOT EXISTS sportdata_event_id TEXT;
+        res = _sb.table("events").select("id, name, created, filename, fighter_count, sportdata_event_id").order("created", desc=True).execute()
         return res.data if res.data else []
         
     # Local fallback
@@ -49,7 +50,7 @@ def get_events():
 
 def get_event(event_id):
     if _sb:
-        ev_res = _sb.table("events").select("id, name, created, filename, fighter_count").eq("id", event_id).execute()
+        ev_res = _sb.table("events").select("id, name, created, filename, fighter_count, sportdata_event_id").eq("id", event_id).execute()
         if not ev_res.data:
             return None
         event = ev_res.data[0]
@@ -83,10 +84,10 @@ def get_event(event_id):
             return event
     return None
 
-def create_event(name, fighters, filename=""):
+def create_event(name, fighters, filename="", sportdata_event_id=""):
     event_id = generate_id()
     created_ts = datetime.datetime.now().isoformat()
-    
+
     if _sb:
         data = {
             "id": event_id,
@@ -94,7 +95,8 @@ def create_event(name, fighters, filename=""):
             "created": created_ts,
             "filename": filename,
             "fighter_count": len(fighters),
-            "fighters": fighters
+            "fighters": fighters,
+            "sportdata_event_id": sportdata_event_id or None,
         }
         _sb.table("events").insert(data).execute()
         return event_id
@@ -102,13 +104,14 @@ def create_event(name, fighters, filename=""):
     # Local fallback
     event_dir = os.path.join(EVENTS_DIR, event_id)
     os.makedirs(event_dir, exist_ok=True)
-    
+
     info = {
         "id": event_id,
         "name": name,
         "created": created_ts,
         "filename": filename,
-        "fighter_count": len(fighters)
+        "fighter_count": len(fighters),
+        "sportdata_event_id": sportdata_event_id or "",
     }
     with open(os.path.join(event_dir, "info.json"), "w") as f:
         json.dump(info, f, indent=2)
@@ -193,3 +196,18 @@ def delete_event_day(event_id, day_id):
     day_file = os.path.join(EVENTS_DIR, event_id, "days", f"{day_id}.json")
     if os.path.exists(day_file):
         os.remove(day_file)
+
+
+def update_event_sportdata_id(event_id: str, sportdata_id: str):
+    if _sb:
+        _sb.table("events").update({"sportdata_event_id": sportdata_id}).eq("id", event_id).execute()
+        return
+
+    info_file = os.path.join(EVENTS_DIR, event_id, "info.json")
+    if not os.path.exists(info_file):
+        return
+    with open(info_file) as f:
+        info = json.load(f)
+    info["sportdata_event_id"] = sportdata_id
+    with open(info_file, "w") as f:
+        json.dump(info, f, indent=2)

@@ -227,6 +227,7 @@
       border-color: #0d9488;
       color: white;
     }
+    #sync-status { font-size:.75rem; color:#888; }
 </style>
 </head>
 <body>
@@ -249,8 +250,10 @@
   {% endif %}
 </div>
 
-<div class="container-fluid px-3 mb-2">
+<div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap align-items-center">
   <a href="{{ url_for('event_public', event_id=event_id) }}" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
+  <button id="sync-btn" onclick="syncLive()" class="btn btn-outline-teal btn-sm">🔄 Sync live times</button>
+  <span id="sync-status"></span>
 </div>
 
 <div class="container-fluid px-3">
@@ -350,6 +353,26 @@
   <button class="btn btn-outline-secondary btn-sm" id="past-toggle" onclick="togglePast()" style="display:none"></button>
   <button class="btn btn-outline-teal btn-sm" id="elim-toggle" onclick="toggleElim()" style="display:none"></button>
   <span class="text-muted small ms-auto" id="visible-count"></span>
+</div>
+
+<!-- Sportdata ID modal -->
+<div class="modal fade" id="sportdataModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Sportdata Event ID</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">Enter the Sportdata event ID to sync live times (e.g. <code>2875</code>).</p>
+        <input type="text" id="sportdata-id-input" class="form-control form-control-sm" placeholder="e.g. 2875">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-teal" onclick="saveSportdataId()">Save & Sync</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script
@@ -506,6 +529,58 @@
 
   update();
   setInterval(update, 30000);
+
+  // ---- live sync ----
+  const EVENT_ID = {{ event_id | tojson }};
+  let sportdataId = {{ sportdata_event_id | tojson }};
+  let syncTimer = null;
+
+  function setSyncStatus(text) {
+    const el = document.getElementById('sync-status');
+    if (el) el.textContent = text;
+  }
+
+  function syncLive() {
+    if (!sportdataId) {
+      new bootstrap.Modal(document.getElementById('sportdataModal')).show();
+      return;
+    }
+    document.getElementById('sync-btn').disabled = true;
+    setSyncStatus('Syncing…');
+    const day = new Date().toISOString().slice(0, 10);
+    fetch(`/api/events/${EVENT_ID}/live-sync?day=${day}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error === 'no_sportdata_id') {
+          new bootstrap.Modal(document.getElementById('sportdataModal')).show();
+          setSyncStatus('');
+        } else if (data.error) {
+          setSyncStatus('Sync failed: ' + data.error);
+        } else {
+          setSyncStatus('Updated ' + new Date().toLocaleTimeString());
+          if (syncTimer) clearTimeout(syncTimer);
+          syncTimer = setTimeout(syncLive, 60000);
+        }
+      })
+      .catch(() => setSyncStatus('Sync failed'))
+      .finally(() => { document.getElementById('sync-btn').disabled = false; });
+  }
+
+  function saveSportdataId() {
+    const val = document.getElementById('sportdata-id-input').value.trim();
+    if (!val) return;
+    fetch(`/api/events/${EVENT_ID}/sportdata-id`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sportdata_id: val}),
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        sportdataId = val;
+        bootstrap.Modal.getInstance(document.getElementById('sportdataModal')).hide();
+        syncLive();
+      }
+    });
+  }
 </script>
 
 </body>

@@ -193,6 +193,7 @@ def index():
 def new_event():
     if request.method == "POST":
         name = request.form.get("event_name", "").strip()
+        sportdata_event_id = request.form.get("sportdata_event_id", "").strip()
         reg_file = request.files.get("registrations")
         
         if not name:
@@ -212,7 +213,7 @@ def new_event():
             try:
                 # Load all fighters (empty filter)
                 all_fighters = _load_fighters(str(reg_path), "")
-                event_id = _storage.create_event(name, all_fighters, filename=reg_file.filename)
+                event_id = _storage.create_event(name, all_fighters, filename=reg_file.filename, sportdata_event_id=sportdata_event_id)
                 flash("Event created successfully.", "success")
                 return redirect(url_for("event_admin", event_id=event_id))
             except Exception as e:
@@ -339,16 +340,17 @@ def share_day(event_id, day_id):
         draws = day.get("raw_draws")
         schedule = day.get("rows", [])
         matched = _match(team_fighters, schedule, draws)
-        return render_template("result.html", 
-                               rows=matched, 
-                               swiss_count=len(team_fighters), 
+        return render_template("result.html",
+                               rows=matched,
+                               swiss_count=len(team_fighters),
                                fighter_list=team_fighters,
                                draws_used=bool(draws),
                                event_name=event["name"],
                                event_id=event["id"],
                                day_name=day["name"],
                                club_filter=club_filter,
-                               country_filter=country_filter)
+                               country_filter=country_filter,
+                               sportdata_event_id=event.get("sportdata_event_id", "") or "")
                                
     elif day_type == "ring-cards":
         ring_fights = day.get("rows", [])
@@ -368,7 +370,8 @@ def share_day(event_id, day_id):
                                event_id=event["id"],
                                day_name=day["name"],
                                club_filter=club_filter,
-                               country_filter=country_filter)
+                               country_filter=country_filter,
+                               sportdata_event_id=event.get("sportdata_event_id", "") or "")
                                
     elif day_type == "results":
         results_rows = day.get("rows", [])
@@ -397,6 +400,38 @@ def share_day(event_id, day_id):
                                club_filter=club_filter,
                                country_filter=country_filter,
                                medals_only=medals_only)
+
+@app.route("/api/events/<event_id>/sportdata-id", methods=["POST"])
+def set_sportdata_id(event_id):
+    from flask import jsonify
+    if not _storage.get_event(event_id):
+        return jsonify({"error": "not_found"}), 404
+    sportdata_id = (request.json or {}).get("sportdata_id", "").strip()
+    if not sportdata_id:
+        return jsonify({"error": "empty"}), 400
+    _storage.update_event_sportdata_id(event_id, sportdata_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/events/<event_id>/live-sync", methods=["GET"])
+def live_sync(event_id):
+    from flask import jsonify
+    import datetime as _dt
+    event = _storage.get_event(event_id)
+    if not event:
+        return jsonify({"error": "not_found"}), 404
+
+    sportdata_id = (event.get("sportdata_event_id") or "").strip()
+    if not sportdata_id:
+        return jsonify({"error": "no_sportdata_id"}), 200
+
+    day = request.args.get("day") or _dt.date.today().isoformat()
+
+    from utils.sportdata_sync import fetch_day_times
+    data = fetch_day_times(sportdata_id, day)
+    data["synced_at"] = _dt.datetime.now().isoformat()
+    return jsonify(data)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))

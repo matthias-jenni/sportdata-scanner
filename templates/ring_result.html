@@ -183,6 +183,10 @@
       border-color: #0d9488;
       color: white;
     }
+    .delay-badge { display:none; margin-top:.15rem; }
+    .delay-late  { color:#dc2626; font-size:.72rem; font-weight:700; white-space:nowrap; }
+    .delay-early { color:#16a34a; font-size:.72rem; font-weight:700; white-space:nowrap; }
+    #sync-status { font-size:.75rem; color:#888; }
 </style>
 </head>
 <body>
@@ -201,11 +205,13 @@
   </p>
 </div>
 
-<div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap">
+<div class="container-fluid px-3 mb-2 d-flex gap-2 flex-wrap align-items-center">
   <a href="{{ url_for('event_public', event_id=event_id) }}" class="btn btn-outline-secondary btn-sm back-btn">← Back</a>
   <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">🖨 Print</button>
   <button onclick="expandAll()" class="btn btn-outline-secondary btn-sm">⬇ Expand all</button>
   <button onclick="collapseAll()" class="btn btn-outline-secondary btn-sm">⬆ Collapse all</button>
+  <button id="sync-btn" onclick="syncLive()" class="btn btn-outline-teal btn-sm">🔄 Sync live times</button>
+  <span id="sync-status"></span>
 </div>
 
 <div class="container-fluid px-3">
@@ -236,7 +242,7 @@
   {% endif %}
 
   {% set category_parts = c.category_code|category_parts %}
-  <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}">
+  <div class="fight-card" data-search="{{ c.fighter1.name }} {{ c.fighter2.name }} {{ c.ring }} {{ c.category_code }} {{ c.phase }}" data-fight-no="{{ c.fight_no or '' }}" data-pdf-time="{{ c.time or '' }}">
 
     
     {# ---- Collapsed summary row ---- #}
@@ -252,6 +258,7 @@
         {% else %}
             <span class="text-muted" style="opacity:0.5">-</span>
         {% endif %}
+        <span class="delay-badge"></span>
       </div>
 
       <!-- 2. Name -->
@@ -319,17 +326,32 @@
 
 </div>
 
-<script>
-  function toggleCard(card) {
-    card.classList.toggle('open');
-  }
-  function expandAll() {
-    document.querySelectorAll('.fight-card:not([style*="display: none"])').forEach(c => c.classList.add('open'));
-  }
-  function collapseAll() {
-    document.querySelectorAll('.fight-card').forEach(c => c.classList.remove('open'));
-  }
+<!-- Sportdata ID modal -->
+<div class="modal fade" id="sportdataModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Sportdata Event ID</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">Enter the Sportdata event ID to sync live times (e.g. <code>2875</code>).</p>
+        <input type="text" id="sportdata-id-input" class="form-control form-control-sm" placeholder="e.g. 2875">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-teal" onclick="saveSportdataId()">Save & Sync</button>
+      </div>
+    </div>
+  </div>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+<script>
+  // ---- card JS ----
+  function toggleCard(card) { card.classList.toggle('open'); }
+  function expandAll() { document.querySelectorAll('.fight-card:not([style*="display: none"])').forEach(c => c.classList.add('open')); }
+  function collapseAll() { document.querySelectorAll('.fight-card').forEach(c => c.classList.remove('open')); }
   const input = document.getElementById('card-filter');
   if (input) {
     input.addEventListener('input', function() {
@@ -343,6 +365,88 @@
       });
       document.getElementById('no-results').style.display = visible === 0 ? '' : 'none';
     });
+  }
+
+  // ---- live sync ----
+  const EVENT_ID = {{ event_id | tojson }};
+  let sportdataId = {{ sportdata_event_id | tojson }};
+  let syncTimer = null;
+
+  function toMin(hhmm) {
+    if (!hhmm || !hhmm.includes(':')) return null;
+    const [h, m] = hhmm.split(':');
+    return parseInt(h) * 60 + parseInt(m);
+  }
+
+  function applyDelays(byFightNo) {
+    document.querySelectorAll('.fight-card[data-fight-no]').forEach(card => {
+      const fn = card.dataset.fightNo;
+      const pdfTime = card.dataset.pdfTime;
+      const badge = card.querySelector('.delay-badge');
+      if (!badge) return;
+      const sd = byFightNo[fn];
+      if (!fn || !sd || !pdfTime) { badge.style.display = 'none'; return; }
+      const delta = toMin(sd.time) - toMin(pdfTime);
+      if (delta === null || Math.abs(delta) < 1) { badge.style.display = 'none'; return; }
+      const sign = delta > 0 ? '+' : '−';
+      const cls  = delta > 0 ? 'delay-late' : 'delay-early';
+      badge.innerHTML = `<span class="${cls}">● ${sign}${Math.abs(Math.round(delta))}m</span>`;
+      badge.style.display = '';
+    });
+  }
+
+  function setSyncStatus(text) {
+    const el = document.getElementById('sync-status');
+    if (el) el.textContent = text;
+  }
+
+  function syncLive() {
+    if (!sportdataId) {
+      new bootstrap.Modal(document.getElementById('sportdataModal')).show();
+      return;
+    }
+    document.getElementById('sync-btn').disabled = true;
+    setSyncStatus('Syncing…');
+    const day = new Date().toISOString().slice(0, 10);
+    fetch(`/api/events/${EVENT_ID}/live-sync?day=${day}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error === 'no_sportdata_id') {
+          new bootstrap.Modal(document.getElementById('sportdataModal')).show();
+          setSyncStatus('');
+        } else if (data.error) {
+          setSyncStatus('Sync failed: ' + data.error);
+        } else {
+          applyDelays(data.by_fight_no || {});
+          setSyncStatus('Updated ' + new Date().toLocaleTimeString());
+          scheduleSyncIn(60);
+        }
+      })
+      .catch(() => setSyncStatus('Sync failed'))
+      .finally(() => { document.getElementById('sync-btn').disabled = false; });
+  }
+
+  function scheduleSyncIn(seconds) {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncLive, seconds * 1000);
+  }
+
+  function saveSportdataId() {
+    const val = document.getElementById('sportdata-id-input').value.trim();
+    if (!val) return;
+    fetch(`/api/events/${EVENT_ID}/sportdata-id`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sportdata_id: val}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          sportdataId = val;
+          bootstrap.Modal.getInstance(document.getElementById('sportdataModal')).hide();
+          syncLive();
+        }
+      });
   }
 </script>
 </body>

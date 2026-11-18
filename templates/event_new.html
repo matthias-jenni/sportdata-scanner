@@ -47,6 +47,11 @@
           <input type="file" class="form-control" name="registrations" accept=".pdf,.html,.htm,text/html,application/pdf" required>
           <div class="form-text">Upload the file containing all fighters. They will be saved to this event permanently.</div>
         </div>
+        <div class="mb-4">
+          <label class="form-label">Sportdata Event ID <span class="text-muted">(optional)</span></label>
+          <input type="text" class="form-control" name="sportdata_event_id" placeholder="e.g. 2875">
+          <div class="form-text">Found on sportdata.org — used to sync live fight times.</div>
+        </div>
         <button type="submit" class="btn w-100 py-2 text-white fw-bold" style="background:#0d9488;">Create Event & Parse Fighters</button>
       </form>
     </div>
